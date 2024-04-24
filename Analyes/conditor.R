@@ -24,7 +24,7 @@ library(rworldmap)
 library(readr)
 pastclim::download_dataset("Beyer2020")
 
-setwd("C:/Users/annie/OneDrive/Desktop/tidymodel")
+setwd("C:/github/SNR_SDM/Data/processed")
 conditor <- read_csv("conditor.csv")
 print(conditor)
 
@@ -33,7 +33,8 @@ print(conditor)
 # Convert data frame to spatial features
 # Set the CRS to GDA2020 for use in Australia
 
-conditor <- st_as_sf(conditor, coords = c("longitude", "latitude"))
+conditor <- st_as_sf(conditor, coords = c("longitude", "latitude")) |>
+  mutate(time_bp = time_bp*(-1))
 st_crs(conditor) <- 4326
 
 
@@ -98,7 +99,8 @@ conditor_df <- location_slice_from_region_series(conditor_df,
 # as we don't need it for modelling
 conditor <- conditor %>%
   bind_cols(conditor_df[, climate_vars]) %>%
-  select(-time_step)
+  select(-time_step) %>%
+  filter(!is.na(.$bio01))
 
 #Fit the model by crossvalidation
 # Next, we need to set up a recipe to define how to handle our dataset. We don’t want to transform our data, so we just need to define the formula (class is the outcome, all other variables are predictors; note that, for sf objects, geometry is automatically ignored as a predictor):

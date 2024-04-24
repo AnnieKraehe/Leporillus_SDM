@@ -24,7 +24,7 @@ library(rworldmap)
 library(readr)
 pastclim::download_dataset("Beyer2020")
 
-setwd("C:/Users/annie/OneDrive/Desktop/tidymodel")
+setwd("C:/github/SNR_SDM/Data/processed")
 middens <- read_csv("datedmiddens.csv")
 print(middens)
 

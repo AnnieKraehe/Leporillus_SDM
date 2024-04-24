@@ -1,5 +1,5 @@
-install.packages("tidymodels")
-install.packages("rworldmap")
+#install.packages("tidymodels")
+#install.packages("rworldmap")
 library(broom)
 library(recipes)
 library(dials)
@@ -24,7 +24,7 @@ library(rworldmap)
 library(readr)
 pastclim::download_dataset("Beyer2020")
 
-setwd("C:/Users/annie/OneDrive/Desktop/tidymodel")
+setwd("C:/github/SNR_SDM/Data/processed")
 apicalis <- read_csv("apicalis.csv")
 print(apicalis)
 
@@ -33,7 +33,9 @@ print(apicalis)
 # Convert data frame to spatial features
 # Set the CRS to GDA2020 for use in Australia
 
-apicalis <- st_as_sf(apicalis, coords = c("longitude", "latitude"))
+apicalis <- st_as_sf(apicalis, coords = c("longitude", "latitude")) |>
+  mutate(time_bp = time_bp*(-1))
+
 st_crs(apicalis) <- 4326
 
 
