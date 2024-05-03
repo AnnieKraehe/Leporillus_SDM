@@ -1,5 +1,6 @@
-install.packages("tidymodels")
-install.packages("rworldmap")
+#install.packages("tidymodels")
+#install.packages("rworldmap")
+#install.packages("oz")
 library(broom)
 library(recipes)
 library(dials)
@@ -22,6 +23,9 @@ library (tidysdm)
 library (pastclim)
 library(rworldmap)
 library(readr)
+library(oz)
+library(DALEX)
+library(car)
 pastclim::download_dataset("Beyer2020")
 
 setwd("C:/github/SNR_SDM/Data/processed")
@@ -57,12 +61,22 @@ ggplot() +
 
 #We now need a time series of palaeoclimate reconstructions. In this vignette, we will use the example dataset from pastclim. This dataset only has reconstructions every 5k years for the past 20k years at 1 degree resolution, with 3 bioclimatic variables. It will suffice for illustrative purposes, but we recommend that you download higher quality datasets with pastclim for real analysis. As for the land mask, we will cut the reconstructions to cover Europe only:
 library(pastclim)
-climate_vars <- c("bio01", "bio05", "bio06","bio07","bio12")
+climate_vars <- c("bio05", "bio06","bio12")
 climate_full <- pastclim::region_series(
   bio_variables = climate_vars,
   data = "Beyer2020",
   crop = vect(Aust_extent)
 )
+
+
+##VIF
+climate_vars <- c('bio05','bio06','bio12')
+climate_full <- pastclim::region_series(
+  bio_variables = climate_vars,
+  data = "Beyer2020",
+  crop = vect(Aust_extent) )
+
+
 
 #Now we sample pseudo-absences (we will constraint them to be at least 70km away from any presences), selecting three times the number of presences
 
@@ -100,7 +114,7 @@ conditor_df <- location_slice_from_region_series(conditor_df,
 conditor <- conditor %>%
   bind_cols(conditor_df[, climate_vars]) %>%
   select(-time_step) %>%
-  filter(!is.na(.$bio01))
+  filter(!is.na(.$bio05))
 
 #Fit the model by crossvalidation
 # Next, we need to set up a recipe to define how to handle our dataset. We don’t want to transform our data, so we just need to define the formula (class is the outcome, all other variables are predictors; note that, for sf objects, geometry is automatically ignored as a predictor):
@@ -177,3 +191,13 @@ prediction_lgm <- predict_raster(conditor_ensemble, climate_lgm)
 ggplot() +
   geom_spatraster(data = prediction_lgm, aes(fill = mean)) +
   scale_fill_terrain_c()
+
+
+##explain importance of variables
+explainer_conditor_ens <- explain_tidysdm(conditor_ensemble)
+
+vip_ensemble <- model_parts(explainer = explainer_conditor_ens)
+plot(vip_ensemble)
+
+pdp_bio14 <- model_profile(explainer_conditor_ens, N = 500, variables = "bio12")
+plot(pdp_bio12)

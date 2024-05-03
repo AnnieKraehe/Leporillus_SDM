@@ -1,5 +1,5 @@
-install.packages("tidymodels")
-install.packages("rworldmap")
+#install.packages("tidymodels")
+#install.packages("rworldmap")
 library(broom)
 library(recipes)
 library(dials)
