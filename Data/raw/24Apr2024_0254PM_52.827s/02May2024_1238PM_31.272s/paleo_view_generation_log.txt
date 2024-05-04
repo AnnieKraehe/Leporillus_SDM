@@ -1,0 +1,7 @@
+02 May 2024 12:42PM
+  Series Data File Generated for Change in Annual Minimum Temperature Relative to 200 BP
+  Region: Australia/NZ
+  Period: 20000 BP - 200 BP
+  Interval: 30 year intervals taken in 10 year steps
+  Bias Correction: Off
+  CSV data file generated in C:\github\SNR_SDM\Data\raw\24Apr2024_0254PM_52.827s\02May2024_1238PM_31.272s

@@ -1,0 +1,7 @@
+24 Apr 2024 02:54PM
+  Grid Data Files Generated for Change in Annual Mean Temperature Relative to 1940 AD
+  Region: Australia/NZ
+  Period: 20000 BP - 19600 BP
+  Interval: 100 year intervals taken in 50 year steps
+  Bias Correction: Off
+  9 CSV data files generated in C:\github\SNR_SDM\Data\raw\24Apr2024_0254PM_52.827s
