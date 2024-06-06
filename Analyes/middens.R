@@ -39,7 +39,7 @@ st_crs(middens) <- 4326
 
 
 #As a background to our presences, we will use the land mask for the present, taken from pastclim, and cut to cover Oceania:
-land_mask <- pastclim::get_land_mask(time_bp =, dataset = "Beyer2020")
+land_mask <- pastclim::get_land_mask(time_bp =, dataset = "Krapp2021")
 Aust_extent <- terra::ext(109.4919, 152.6379, -42.8198, -8.1955)
 
 
@@ -56,10 +56,10 @@ ggplot() +
 
 #We now need a time series of palaeoclimate reconstructions. In this vignette, we will use the example dataset from pastclim. This dataset only has reconstructions every 5k years for the past 20k years at 1 degree resolution, with 3 bioclimatic variables. It will suffice for illustrative purposes, but we recommend that you download higher quality datasets with pastclim for real analysis. As for the land mask, we will cut the reconstructions to cover Europe only:
 library(pastclim)
-climate_vars <- c("bio01", "bio05", "bio06","bio07","bio12")
+climate_vars <- c("bio05", "bio06","bio12")
 climate_full <- pastclim::region_series(
   bio_variables = climate_vars,
-  data = "Beyer2020",
+  data = "Krapp2021",
   crop = vect(Aust_extent)
 )
 
@@ -167,7 +167,7 @@ autoplot(middens_ensemble)
 climate_lgm <- pastclim::region_slice(
   time_bp = -20000,
   bio_variables = climate_vars,
-  data = "Beyer2020",
+  data = "Krapp2021",
   crop = vect(Aust_extent)
 )
 #And predict using the ensemble:
@@ -175,3 +175,26 @@ prediction_lgm <- predict_raster(middens_ensemble, climate_lgm)
 ggplot() +
   geom_spatraster(data = prediction_lgm, aes(fill = mean)) +
   scale_fill_terrain_c()
+
+# # ################  Step 2   ###################
+#build and Australia shape vector
+australia_shape <- st_read("C:/github/SNR_SDM/Data/raw/Australia_shape")
+australia_shape <- st_transform(australia_shape, crs = crs(prediction_lgm))
+#
+plot(australia_shape["geometry"], col = NA, border = 'red', lwd = 2, main = "Outline of Australia")
+
+# Create a raster template
+rast_template <- rast(nrows=100, ncols=100, ext=ext(australia_shape))  # Adjust resolution as needed
+
+# Rasterize the vector outline
+Aust_raster <- rasterize(australia_shape, rast_template, field="AUS_CODE21", background=NA)
+
+# Plot the prediction_lgm raster
+plot(prediction_lgm, main = "Middens -20ka")
+
+
+
+
+# Check if the geometries are polygons and handle accordingly
+#if (any(st_geometry_type(australia_shape) %in% c("POLYGON", "MULTIPOLYGON"))) {
+plot(st_geometry(australia_shape), col = NA, border = 'red', lwd = 2, add = TRUE)

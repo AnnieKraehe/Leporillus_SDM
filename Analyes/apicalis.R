@@ -1,36 +1,52 @@
-#install.packages("tidymodels")
+# #install.packages("tidymodels")
 #install.packages("rworldmap")
 #install.packages("oz")
 library(broom)
-library(recipes)
-library(dials)
-library(rsample)
-library(dplyr)
-library(tibble)
-library(ggplot2)
-library(tidyr)
-library(infer)
-library(tune)
-library(modeldata)
-library(workflows)
-library(parsnip)
-library(workflowsets)
-library(purrr)
-library(sf)
-library(terra)
-library (tidymodels)
-library (tidysdm)
-library (pastclim)
-library(rworldmap)
-library(readr)
-library(oz)
-library(DALEX)
 library(car)
+library(DALEX)
+library(dials)
+library(dplyr)
+library(ggplot2)
+library(infer)
+library(modeldata)
+library(oz)
+library(parsnip)
+library(pastclim)
+library(purrr)
+library(readr)
+library(recipes)
+library(rsample)
+library(rworldmap)
+library(sf)
+library(tidyr)
+library(tidymodels)
+library(tidysdm)
+library(tibble)
+library(tune)
+library(terra)
+library(workflows)
+library(workflowsets)
+
 #pastclim::download_dataset("Krapp2021")
+
+# #########import palaeoview variables
+# #min temp
+# "C:/github/SNR_SDM/Data/raw/Palaeoview_data/Minimum_Temperature_Annual_21000BP-100BP_step20_size30.nc" |> rast () -> min_temp
+# plot (min_temp)
+# 
+# #max temp
+# "C:/github/SNR_SDM/Data/raw/Palaeoview_data/Maximum_Temperature_Annual_21000BP-100BP_step20_size30.nc" |> rast () -> max_temp
+# plot (max_temp)
+# 
+# #Mean Precipitation 
+# "C:/github/SNR_SDM/Data/raw/Palaeoview_data/Mean_Precipitation_Annual_21000BP-100BP_step20_size30.nc" |> rast () -> mean_prec
+# plot (mean_prec)
+
 
 setwd("C:/github/SNR_SDM/Data/processed")
 apicalis <- read_csv("apicalis.csv")
 print(apicalis)
+
 
 #We convert our dataset into an sf data.frame so that we can easily plot it (here tidyterra shines):
 
@@ -71,28 +87,26 @@ ggplot() +
 
 
 # #####VIF
-# 
-# 
+#
+#
 # apicalis2<-data.frame(as.numeric(apicalis$class),apicalis$bio01,apicalis$bio05,apicalis$bio06,apicalis$bio12,apicalis$bio13,apicalis$bio14)
 # colnames(apicalis2)<-c('presence','bio01','bio05','bio06','bio12','bio13','bio14')
-# 
-# 
+#
+#
 # vif(lm(presence~bio01+bio05+bio06+bio12+bio13+bio14,data = apicalis2))
 # vif(lm(presence~bio01+bio05+bio06+bio13+bio14,data = apicalis2))
 # vif(lm(presence~bio05+bio06+bio13+bio14,data = apicalis2))
 
 
-# climate_vars <- c('bio05','bio06','bio13','bio14')
-# climate_full <- pastclim::region_series(
-#   bio_variables = climate_vars,
-#   data = "Krapp2021",
-#   crop = vect(Aust_extent)
-##
-climate_vars <- c('bio05','bio06','bio12')
+
+climate_data <- c('max_temp','min_temp', 'mean_prec')
+##I couldnt get these ^^^ to work with the model code later so I swapped the Krapp files for these in the R data file
+climate_vars <- c("bio05", "bio06","bio12")
 climate_full <- pastclim::region_series(
   bio_variables = climate_vars,
   data = "Krapp2021",
-  crop = vect(Aust_extent) )
+  crop = vect(Aust_extent)
+)
 
 #Now we sample pseudo-absences (we will constraint them to be at least 70km away from any presences), selecting three times the number of presences
 
@@ -193,7 +207,7 @@ autoplot(apicalis_ensemble)
 #We can now make predictions with this ensemble (using the default option of taking the mean of the predictions from each model) for the Last Glacial Maximum (LGM, 21,000 years ago).
 
 climate_lgm <- pastclim::region_slice(
-  time_bp = -3000,
+  time_bp = -21000,
   bio_variables = climate_vars,
   data = "Krapp2021",
   crop = vect(Aust_extent))
@@ -228,7 +242,7 @@ rast_template <- rast(nrows=100, ncols=100, ext=ext(australia_shape))  # Adjust 
 Aust_raster <- rasterize(australia_shape, rast_template, field="AUS_CODE21", background=NA)
 
 # Plot the prediction_lgm raster
-plot(prediction_lgm, main = "Overlay of Vector and Raster Data")
+plot(prediction_lgm, main = "apicalis -30ka")
 
 
   
@@ -241,11 +255,6 @@ plot(prediction_lgm, main = "Overlay of Vector and Raster Data")
  # lines(coords, col = 'red', lwd = 2)
 #} 
 # Overlay the vector outline
-plot(st_geometry(australia_shape))
+#plot(st_geometry(australia_shape))
 #
-# #save image
-
-
-# Save the plot as a JPEG file
-ggsave(filename = "L.apicalis -3000.jpg", plot = final_plot, path = "C:/github/SNR_SDM/Results/apicalis_time_steps", device = "jpeg", width = 10, height = 8, units = "in")
 

@@ -1,0 +1,7 @@
+09 May 2024 01:09PM
+  Grid Data Files Generated for Annual Maximum Temperature
+  Region: Australia/NZ
+  Period: 21000 BP - 100 BP
+  Interval: 30 year intervals taken in 20 year steps
+  Bias Correction: On
+  1046 data grids within the NetCDF file generated in C:\github\SNR_SDM\Data\raw\24Apr2024_0254PM_52.827s\09May2024_0103PM_47.796s
