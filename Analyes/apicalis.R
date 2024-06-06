@@ -21,6 +21,7 @@ library(sf)
 library(tidyr)
 library(tidymodels)
 library(tidysdm)
+library(tidyterra)
 library(tibble)
 library(tune)
 library(terra)
@@ -42,60 +43,113 @@ library(workflowsets)
 # "C:/github/SNR_SDM/Data/raw/Palaeoview_data/Mean_Precipitation_Annual_21000BP-100BP_step20_size30.nc" |> rast () -> mean_prec
 # plot (mean_prec)
 
-
+#set working directory
 setwd("C:/github/SNR_SDM/Data/processed")
+
+#Read in apicalis data
 apicalis <- read_csv("apicalis.csv")
 print(apicalis)
 
 
 #We convert our dataset into an sf data.frame so that we can easily plot it (here tidyterra shines):
 
-# Convert data frame to spatial features
-# Set the Coordinate reference system (CRS) to GDA2020 for use in Australia
-
+# Convert data frame to spatial and temporal features then convert age to time bp
 apicalis2 <- st_as_sf(apicalis, coords = c("longitude", "latitude")) |>
   mutate(time_bp = time_bp*(-1))
 
+# Set the Coordinate reference system (CRS) to GDA2020 for use in Australia
 st_crs(apicalis2) <- 4326
 
 
 
-#As a background to our presences, we will use the land mask for the present, taken from pastclim, and cut to cover Oceania:
+# make a land mask based on present time, based on pastclim data
 land_mask <- pastclim::get_land_mask(time_bp =, dataset = "Krapp2021")
+
+#create a frame of Australia extent
 Aust_extent <- terra::ext(109.4919, 152.6379, -42.8198, -8.1955)
 
-
+#Use Australia frame to crop land mask
 land_mask <- crop (land_mask,vect(Aust_extent))
 
-#tidyterra to plot:
-library(tidyterra)
 
+#Plot
 ggplot() +
   geom_spatraster(data = land_mask, aes()) +
   scale_fill_terrain_c() +
   geom_sf(data = apicalis2, aes(col = time_bp))
 
+ #We now need a time series of palaeoclimate reconstructions. In this vignette, we will use the example dataset from pastclim. This dataset only has reconstructions every 5k years for the past 20k years at 1 degree resolution, with 3 bioclimatic variables. It will suffice for illustrative purposes, but we recommend that you download higher quality datasets with pastclim for real analysis. As for the land mask, we will cut the reconstructions to cover Europe only:
+ library(pastclim)
+#add bio05 palaeoview data
+bio5 <- rast ("C:/github/SNR_SDM/Data/raw/Palaeoview_data/bio05.nc")
+time_bp(bio5) <- seq(-21000, -100, by = 20)
+writeCDF(bio5, "C:/github/SNR_SDM/Data/processed/paleoview/bio5_time.nc", overwrite = TRUE,
+         zname = "time", varname = "bio05")
+climate_bio05 <- pastclim::region_series(
+ bio_variables = 'bio05',
+ dataset = "custom",
+ path_to_nc = "C:/github/SNR_SDM/Data/processed/paleoview/bio5_time.nc",
+  crop = vect(Aust_extent)
+ )
+#add bio06 palaeoview data
+bio6 <- rast ("C:/github/SNR_SDM/Data/raw/Palaeoview_data/bio06.nc")
+time_bp(bio6) <- seq(-21000, -100, by = 20)
+writeCDF(bio6, "C:/github/SNR_SDM/Data/processed/paleoview/bio6_time.nc", overwrite = TRUE,
+         zname = "time", varname = "bio06")
 
-#We now need a time series of palaeoclimate reconstructions. In this vignette, we will use the example dataset from pastclim. This dataset only has reconstructions every 5k years for the past 20k years at 1 degree resolution, with 3 bioclimatic variables. It will suffice for illustrative purposes, but we recommend that you download higher quality datasets with pastclim for real analysis. As for the land mask, we will cut the reconstructions to cover Europe only:
-# library(pastclim)
-# climate_vars <- c('bio01','bio05','bio06','bio12','bio13','bio14')
-# climate_full <- pastclim::region_series(
-#   bio_variables = climate_vars,
-#   data = "Krapp2021",
-#   crop = vect(Aust_extent)
-# )
+climate_bio06 <- pastclim::region_series(
+  bio_variables = 'bio06',
+  dataset = "custom",
+  path_to_nc = "C:/github/SNR_SDM/Data/processed/paleoview/bio6_time.nc",
+  crop = vect(Aust_extent)
+)
+#add bio12 palaeoview data
+bio12 <- rast ("C:/github/SNR_SDM/Data/raw/Palaeoview_data/bio12.nc")
+time_bp(bio12) <- seq(-21000, -100, by = 20)
+writeCDF(bio12, "C:/github/SNR_SDM/Data/processed/paleoview/bio12_time.nc", overwrite = TRUE,
+         zname = "time", varname = "bio12")
+
+climate_bio12 <- pastclim::region_series(
+  bio_variables = 'bio12',
+  dataset = "custom",
+  path_to_nc = "C:/github/SNR_SDM/Data/processed/paleoview/bio12_time.nc",
+  crop = vect(Aust_extent)
+)
 
 
-# #####VIF
-#
-#
-# apicalis2<-data.frame(as.numeric(apicalis$class),apicalis$bio01,apicalis$bio05,apicalis$bio06,apicalis$bio12,apicalis$bio13,apicalis$bio14)
-# colnames(apicalis2)<-c('presence','bio01','bio05','bio06','bio12','bio13','bio14')
-#
-#
-# vif(lm(presence~bio01+bio05+bio06+bio12+bio13+bio14,data = apicalis2))
-# vif(lm(presence~bio01+bio05+bio06+bio13+bio14,data = apicalis2))
-# vif(lm(presence~bio05+bio06+bio13+bio14,data = apicalis2))
+# # 
+# # 
+# # # #####VIF
+# # #
+# # #
+# # # apicalis2<-data.frame(as.numeric(apicalis$class),apicalis$bio01,apicalis$bio05,apicalis$bio06,apicalis$bio12,apicalis$bio13,apicalis$bio14)
+# # # colnames(apicalis2)<-c('presence','bio01','bio05','bio06','bio12','bio13','bio14')
+# # #
+# # #
+# # # vif(lm(presence~bio01+bio05+bio06+bio12+bio13+bio14,data = apicalis2))
+# # # vif(lm(presence~bio01+bio05+bio06+bio13+bio14,data = apicalis2))
+# # # vif(lm(presence~bio05+bio06+bio13+bio14,data = apicalis2))
+# 
+# #We now need a time series of palaeoclimate reconstructions. In this vignette, we will use the example dataset from pastclim. This dataset only has reconstructions every 5k years for the past 20k years at 1 degree resolution, with 3 bioclimatic variables. It will suffice for illustrative purposes, but we recommend that you download higher quality datasets with pastclim for real analysis. As for the land mask, we will cut the reconstructions to cover Europe only:
+# # library(pastclim)
+# # climate_vars <- c('bio01','bio05','bio06','bio12','bio13','bio14')
+# # climate_full <- pastclim::region_series(
+# #   bio_variables = climate_vars,
+# #   data = "Krapp2021",
+# #   crop = vect(Aust_extent)
+# # )
+# 
+# 
+# # #####VIF
+# #
+# #
+# # apicalis2<-data.frame(as.numeric(apicalis$class),apicalis$bio01,apicalis$bio05,apicalis$bio06,apicalis$bio12,apicalis$bio13,apicalis$bio14)
+# # colnames(apicalis2)<-c('presence','bio01','bio05','bio06','bio12','bio13','bio14')
+# #
+# #
+# # vif(lm(presence~bio01+bio05+bio06+bio12+bio13+bio14,data = apicalis2))
+# # vif(lm(presence~bio01+bio05+bio06+bio13+bio14,data = apicalis2))
+# # vif(lm(presence~bio05+bio06+bio13+bio14,data = apicalis2))
 
 
 
