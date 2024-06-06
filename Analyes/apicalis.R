@@ -72,7 +72,7 @@ Aust_extent <- terra::ext(109.4919, 152.6379, -42.8198, -8.1955)
 land_mask <- crop (land_mask,vect(Aust_extent))
 
 
-#Plot
+#Plot 
 ggplot() +
   geom_spatraster(data = land_mask, aes()) +
   scale_fill_terrain_c() +
@@ -80,6 +80,7 @@ ggplot() +
 
  #We now need a time series of palaeoclimate reconstructions. In this vignette, we will use the example dataset from pastclim. This dataset only has reconstructions every 5k years for the past 20k years at 1 degree resolution, with 3 bioclimatic variables. It will suffice for illustrative purposes, but we recommend that you download higher quality datasets with pastclim for real analysis. As for the land mask, we will cut the reconstructions to cover Europe only:
  library(pastclim)
+
 #add bio05 palaeoview data
 bio5 <- rast ("C:/github/SNR_SDM/Data/raw/Palaeoview_data/bio05.nc")
 time_bp(bio5) <- seq(-21000, -100, by = 20)
@@ -116,6 +117,8 @@ climate_bio12 <- pastclim::region_series(
   crop = vect(Aust_extent)
 )
 
+
+#VW: once you have finished one major work chunk, you can start a new file for the next discrete part of the workflow. In this case, you have downloaded everyting and all the data are already in Data/processed/palaeoview, but sometimes you can just save an output by going save (climate_bio1, climate_bio2, file="Climate_bio.rda")
 
 # # 
 # # 
