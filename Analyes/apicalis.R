@@ -38,12 +38,11 @@ apicalis <- read_csv("apicalis.csv")
 print(apicalis)
 
 
-# Convert the 'apicalis' data frame to an sf (simple features) object,specifying 'longitude' and 'latitude' columns as coordinates (X and Y dimensions). Also, create a new column 'time_bp' which is the negative of the existing 'time_bp' column to convert age to time before present. This is the Z dimension.
+# Convert the 'apicalis' data frame to an sf (simple features) object,specifying 'longitude' and 'latitude' columns as coordinates (X and Y dimensions). Also, create a new column 'time_bp' which is the negative of the existing 'time_bp' column to convert age to time before present. This is the Z dimension
 # Object type: sf (simple features) object
-apicalis2 <- st_as_sf(apicalis, coords = c("longitude", "latitude")) |>
-  mutate(time_bp = time_bp*(-1))
+apicalis2 <- st_as_sf(apicalis, coords = c("longitude", "latitude")) 
 
-# Set the Coordinate Reference System (CRS) of 'apicalis2' to GDA2020, which has the EPSG code 4326 (commonly used CRS for geospatial data)
+# Set the Coordinate Reference System (CRS) of 'apicalis2' to GDA2020, which has the EPSG code 4326 
 st_crs(apicalis2) <- 4326
 
 # Create a land mask for the present time using the 'Krapp2021' dataset from the 'pastclim' package
@@ -52,7 +51,7 @@ land_mask <- pastclim::get_land_mask(time_bp =, dataset = "Krapp2021")
 
 # Create an extent object for Australia using specified minimum and maximum X (longitude) and Y (latitude) coordinates (saved in "C:/github/SNR_SDM/Data/raw/Australia_Extent.txt")
 # Object type: Extent (terra package)
-Aust_extent <- terra::ext(109.4919, 152.6379, -42.8198, -8.1955)
+Aust_extent <- terra::ext(110, 152.5, -42.5, -7.5)
 
 # Crop the 'land_mask' SpatRaster to the extent of Australia using the 'Aust_extent' object made in the previous step
 # Object type: SpatRaster (cropped)
@@ -87,7 +86,7 @@ climate_bio05 <- pastclim::region_series(
  bio_variables = 'bio05',
  dataset = "custom",
  path_to_nc = "C:/github/SNR_SDM/Data/processed/paleoview/bio5_time.nc",
-  crop = vect(Aust_extent)
+  crop = vect(land_mask)
  )
 #add bio06 palaeoview data (same as for Bio5)
 bio6 <- rast ("C:/github/SNR_SDM/Data/raw/Palaeoview_data/bio06.nc")
@@ -104,6 +103,8 @@ climate_bio06 <- pastclim::region_series(
 #add bio12 palaeoview data (same as for Bio5 and bio6)
 bio12 <- rast ("C:/github/SNR_SDM/Data/raw/Palaeoview_data/bio12.nc")
 time_bp(bio12) <- seq(-21000, -100, by = 20)
+#convert 94 infinite values into 0 so that the file will write
+bio12[is.infinite(bio12)] <- 0
 writeCDF(bio12, "C:/github/SNR_SDM/Data/processed/paleoview/bio12_time.nc", overwrite = TRUE,
          zname = "time", varname = "bio12")
 
@@ -114,63 +115,29 @@ climate_bio12 <- pastclim::region_series(
   crop = vect(Aust_extent)
 )
 
+# resample land_mask to resolution and extent of climate_full
+land_mask2 <- resample(land_mask, climate_bio12)
+# mask climate_full subdatasets to land_mask
+climate_full$`Maximum_Temperature_Annual_21000BP-100BP_step20_size30` <- mask(climate_full$`Maximum_Temperature_Annual_21000BP-100BP_step20_size30`, land_mask2)
 
-#VW: once you have finished one major work chunk, you can start a new file for the next discrete part of the workflow. In this case, you have downloaded everyting and all the data are already in Data/processed/palaeoview, but sometimes you can just save an output by going save (climate_bio1, climate_bio2, file="Climate_bio.rda")
+climate_full <- sds(bio5, bio6, bio12) |> terra::crop (land_mask)
 
-# # 
-# # 
-# # # #####VIF
-# # #
-# # #
-# # # apicalis2<-data.frame(as.numeric(apicalis$class),apicalis$bio01,apicalis$bio05,apicalis$bio06,apicalis$bio12,apicalis$bio13,apicalis$bio14)
-# # # colnames(apicalis2)<-c('presence','bio01','bio05','bio06','bio12','bio13','bio14')
-# # #
-# # #
-# # # vif(lm(presence~bio01+bio05+bio06+bio12+bio13+bio14,data = apicalis2))
-# # # vif(lm(presence~bio01+bio05+bio06+bio13+bio14,data = apicalis2))
-# # # vif(lm(presence~bio05+bio06+bio13+bio14,data = apicalis2))
-# 
-# #We now need a time series of palaeoclimate reconstructions. In this vignette, we will use the example dataset from pastclim. This dataset only has reconstructions every 5k years for the past 20k years at 1 degree resolution, with 3 bioclimatic variables. It will suffice for illustrative purposes, but we recommend that you download higher quality datasets with pastclim for real analysis. As for the land mask, we will cut the reconstructions to cover Europe only:
-# # library(pastclim)
-# # climate_vars <- c('bio01','bio05','bio06','bio12','bio13','bio14')
-# # climate_full <- pastclim::region_series(
-# #   bio_variables = climate_vars,
-# #   data = "Krapp2021",
-# #   crop = vect(Aust_extent)
-# # )
-# 
-# 
-# # #####VIF
-# #
-# #
-# # apicalis2<-data.frame(as.numeric(apicalis$class),apicalis$bio01,apicalis$bio05,apicalis$bio06,apicalis$bio12,apicalis$bio13,apicalis$bio14)
-# # colnames(apicalis2)<-c('presence','bio01','bio05','bio06','bio12','bio13','bio14')
-# #
-# #
-# # vif(lm(presence~bio01+bio05+bio06+bio12+bio13+bio14,data = apicalis2))
-# # vif(lm(presence~bio01+bio05+bio06+bio13+bio14,data = apicalis2))
-# # vif(lm(presence~bio05+bio06+bio13+bio14,data = apicalis2))
+saveRDS(climate_full, "C:/github/SNR_SDM/Data/processed/paleoview/climate_full.rds")
+
+#VW: once you have finished one major work chunk, you can start a new file for the next discrete part of the workflow. In this case, you have downloaded everything and all the data are already in Data/processed/palaeoview, but sometimes you can just save an output by going save (climate_bio1, climate_bio2, file="Climate_bio.rda")
 
 
+#sample pseudo-absences (we will constraint them to be at least 70km away from any presences), selecting three times the number of presences
 
-climate_data <- c('max_temp','min_temp', 'mean_prec')
-##I couldnt get these ^^^ to work with the model code later so I swapped the Krapp files for these in the R data file
-climate_vars <- c("bio05", "bio06","bio12")
-climate_full <- pastclim::region_series(
-  bio_variables = climate_vars,
-  data = "Krapp2021",
-  crop = vect(Aust_extent)
-)
 
-#Now we sample pseudo-absences (we will constraint them to be at least 70km away from any presences), selecting three times the number of presences
-
-set.seed(123)
-apicalis3 <- sample_pseudoabs_time(apicalis2,
-                                  n_per_presence = 3,
-                                  raster = climate_full,
-                                  time_col = "time_bp",
-                                  lubridate_fun = pastclim::ybp2date,
-                                  method = c("dist_min", km2m(70)))
+apicalis3 <- sample_pseudoabs_time(apicalis2 |>
+                                     #filter apicalis2 to within 21ka
+                                     filter(time_bp > -21000, time_bp < -100),
+                                   n_per_presence = 3,
+                                   raster = climate_full,
+                                   time_col = "time_bp",
+                                   lubridate_fun = pastclim::ybp2date,
+                                   method = c("dist_min", km2m(70)))
 
 #Let’s see our presences and absences:
 
