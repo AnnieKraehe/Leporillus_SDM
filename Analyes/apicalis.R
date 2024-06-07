@@ -30,69 +30,66 @@ library(workflowsets)
 
 #pastclim::download_dataset("Krapp2021")
 
-# #########import palaeoview variables
-# #min temp
-# "C:/github/SNR_SDM/Data/raw/Palaeoview_data/Minimum_Temperature_Annual_21000BP-100BP_step20_size30.nc" |> rast () -> min_temp
-# plot (min_temp)
-# 
-# #max temp
-# "C:/github/SNR_SDM/Data/raw/Palaeoview_data/Maximum_Temperature_Annual_21000BP-100BP_step20_size30.nc" |> rast () -> max_temp
-# plot (max_temp)
-# 
-# #Mean Precipitation 
-# "C:/github/SNR_SDM/Data/raw/Palaeoview_data/Mean_Precipitation_Annual_21000BP-100BP_step20_size30.nc" |> rast () -> mean_prec
-# plot (mean_prec)
-
-#set working directory
 setwd("C:/github/SNR_SDM/Data/processed")
 
-#Read in apicalis data
+# Read in the 'apicalis.csv' file into a data frame called 'apicalis'
+# Object type: data frame
 apicalis <- read_csv("apicalis.csv")
 print(apicalis)
 
 
-#We convert our dataset into an sf data.frame so that we can easily plot it (here tidyterra shines):
-
-# Convert data frame to spatial and temporal features then convert age to time bp
+# Convert the 'apicalis' data frame to an sf (simple features) object,specifying 'longitude' and 'latitude' columns as coordinates (X and Y dimensions). Also, create a new column 'time_bp' which is the negative of the existing 'time_bp' column to convert age to time before present. This is the Z dimension.
+# Object type: sf (simple features) object
 apicalis2 <- st_as_sf(apicalis, coords = c("longitude", "latitude")) |>
   mutate(time_bp = time_bp*(-1))
 
-# Set the Coordinate reference system (CRS) to GDA2020 for use in Australia
+# Set the Coordinate Reference System (CRS) of 'apicalis2' to GDA2020, which has the EPSG code 4326 (commonly used CRS for geospatial data)
 st_crs(apicalis2) <- 4326
 
-
-
-# make a land mask based on present time, based on pastclim data
+# Create a land mask for the present time using the 'Krapp2021' dataset from the 'pastclim' package
+# Object type: SpatRaster where X =longitude, Y = latitude, Z = time
 land_mask <- pastclim::get_land_mask(time_bp =, dataset = "Krapp2021")
 
-#create a frame of Australia extent
+# Create an extent object for Australia using specified minimum and maximum X (longitude) and Y (latitude) coordinates (saved in "C:/github/SNR_SDM/Data/raw/Australia_Extent.txt")
+# Object type: Extent (terra package)
 Aust_extent <- terra::ext(109.4919, 152.6379, -42.8198, -8.1955)
 
-#Use Australia frame to crop land mask
+# Crop the 'land_mask' SpatRaster to the extent of Australia using the 'Aust_extent' object made in the previous step
+# Object type: SpatRaster (cropped)
 land_mask <- crop (land_mask,vect(Aust_extent))
 
 
-#Plot 
+##### Plot the data using ggplot2
 ggplot() +
+  # Add the land mask as a spatial raster layer
   geom_spatraster(data = land_mask, aes()) +
+  # Use a terrain color scale for the land mask
   scale_fill_terrain_c() +
+  # Add the 'apicalis2' sf object as spatial features, colouring by the 'time_bp' column
   geom_sf(data = apicalis2, aes(col = time_bp))
 
- #We now need a time series of palaeoclimate reconstructions. In this vignette, we will use the example dataset from pastclim. This dataset only has reconstructions every 5k years for the past 20k years at 1 degree resolution, with 3 bioclimatic variables. It will suffice for illustrative purposes, but we recommend that you download higher quality datasets with pastclim for real analysis. As for the land mask, we will cut the reconstructions to cover Europe only:
- library(pastclim)
 
-#add bio05 palaeoview data
+#Add Palaeoview Data
+##-------------Add bio05 palaeoview data
+
+# Load the bio05 raster data from the specified file path. "Bio5" is a SpatRaster Loaded from a NetCDF file. It contains raster data for the bio05 variable from the palaeoview dataset.
 bio5 <- rast ("C:/github/SNR_SDM/Data/raw/Palaeoview_data/bio05.nc")
+
+# Set the time_bp attribute for bio5, creating a sequence of time before present from -21000 to -100 in steps of 20. This represents the temporal dimension
 time_bp(bio5) <- seq(-21000, -100, by = 20)
+
+# Write the processed bio5 data (spatraster) to a new NetCDF file at the specified path. The file will be overwritten if it already exists. The z-dimension is named 'time', and the variable is named 'bio05'
 writeCDF(bio5, "C:/github/SNR_SDM/Data/processed/paleoview/bio5_time.nc", overwrite = TRUE,
          zname = "time", varname = "bio05")
+
+# Extract a time series of bio05 data for the specified region (Australia) using the region_series function from the pastclim package. Incorporate Paleoview data by setting 'dataset' to 'custom', and import it by specifying the path to the NetCDF file made in the previous step. The data is cropped to the extent of Australia defined by the Aust_extent object
 climate_bio05 <- pastclim::region_series(
  bio_variables = 'bio05',
  dataset = "custom",
  path_to_nc = "C:/github/SNR_SDM/Data/processed/paleoview/bio5_time.nc",
   crop = vect(Aust_extent)
  )
-#add bio06 palaeoview data
+#add bio06 palaeoview data (same as for Bio5)
 bio6 <- rast ("C:/github/SNR_SDM/Data/raw/Palaeoview_data/bio06.nc")
 time_bp(bio6) <- seq(-21000, -100, by = 20)
 writeCDF(bio6, "C:/github/SNR_SDM/Data/processed/paleoview/bio6_time.nc", overwrite = TRUE,
@@ -104,7 +101,7 @@ climate_bio06 <- pastclim::region_series(
   path_to_nc = "C:/github/SNR_SDM/Data/processed/paleoview/bio6_time.nc",
   crop = vect(Aust_extent)
 )
-#add bio12 palaeoview data
+#add bio12 palaeoview data (same as for Bio5 and bio6)
 bio12 <- rast ("C:/github/SNR_SDM/Data/raw/Palaeoview_data/bio12.nc")
 time_bp(bio12) <- seq(-21000, -100, by = 20)
 writeCDF(bio12, "C:/github/SNR_SDM/Data/processed/paleoview/bio12_time.nc", overwrite = TRUE,
