@@ -1,0 +1,70 @@
+---
+title: "Palaoview variables"
+author: "Annie"
+date: "2024-06-20"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+____Add Palaeoview Data
+```{r bio05}
+# Load the bio05 spat raster data from the NetCDF file
+bio5 <- rast("C:/github/SNR_SDM/Data/raw/Palaeoview_data/bio05.nc")
+
+# Set the time_bp attribute for bio5, creating a sequence of time before present from -21000 to -100 in steps of 20. This represents the temporal dimension.
+time_bp(bio5) <- seq(-21000, -100, by = 20)
+
+# Write the processed bio5 data (SpatRaster) to a new NetCDF file at the specified path. The file will be overwritten if it already exists. The z-dimension is named 'time', and the variable is named 'bio05'.
+writeCDF(bio5, "C:/github/SNR_SDM/Data/processed/paleoview/bio5_time.nc", overwrite = TRUE, zname = "time", varname = "bio05")
+
+# Extract a time series of bio05 data for the specified region (Australia) using the region_series function from the pastclim package.
+# Incorporate Palaeoview data by setting 'dataset' to 'custom', and import it by specifying the path to the NetCDF file made in the previous step. The data is cropped to the extent of Australia defined by the Aust_extent object.
+climate_bio05 <- pastclim::region_series(
+  bio_variables = 'bio05',
+  dataset = "custom",
+  path_to_nc = "C:/github/SNR_SDM/Data/processed/paleoview/bio5_time.nc",
+  crop = vect(Aust_extent)
+)
+
+```
+```{r bio06}
+bio6 <- rast("C:/github/SNR_SDM/Data/raw/Palaeoview_data/bio06.nc")
+time_bp(bio6) <- seq(-21000, -100, by = 20)
+writeCDF(bio6, "C:/github/SNR_SDM/Data/processed/paleoview/bio6_time.nc", overwrite = TRUE, zname = "time", varname = "bio06")
+
+# Extract a time series of bio06 data for the specified region (Australia)
+climate_bio06 <- pastclim::region_series(
+  bio_variables = 'bio06',
+  dataset = "custom",
+  path_to_nc = "C:/github/SNR_SDM/Data/processed/paleoview/bio6_time.nc",
+  crop = vect(Aust_extent)
+)
+```
+```{r bio12}
+#Bio12 is different to bio05 and bio06
+# Load the bio12 raster data from the specified file path (same process as bio05 and bio06)
+bio12 <- rast("C:/github/SNR_SDM/Data/raw/Palaeoview_data/bio12.nc")
+time_bp(bio12) <- seq(-21000, -100, by = 20)
+
+# Convert 94 infinite values into 0 so that the file will write
+bio12[is.infinite(bio12)] <- 0
+
+# Write the processed bio12 data to a new NetCDF file
+writeCDF(bio12, "C:/github/SNR_SDM/Data/processed/paleoview/bio12_time.nc", overwrite = TRUE, zname = "time", varname = "bio12")
+
+# Extract a time series of bio12 data for the specified region (Australia)
+climate_bio12 <- pastclim::region_series(
+  bio_variables = 'bio12',
+  dataset = "custom",
+  path_to_nc = "C:/github/SNR_SDM/Data/processed/paleoview/bio12_time.nc",
+  crop = vect(Aust_extent)
+)
+```
+```{r}
+# Combine the climate variables into a single SpatRaster dataset called 'climate_full'
+climate_full <- c(climate_bio05, climate_bio06, climate_bio12)
+
+saveRDS(climate_full, "C:/github/SNR_SDM/Data/processed/paleoview/climate_full.rds")
+```
