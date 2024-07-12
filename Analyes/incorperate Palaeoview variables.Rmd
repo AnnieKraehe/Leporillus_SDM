@@ -4,9 +4,44 @@ author: "Annie"
 date: "2024-06-20"
 output: html_document
 ---
+```{r libraries,}
+# Load necessary libraries for various tasks including data manipulation, spatial analysis, plotting, and machine learning
+library(broom)
+library(car)
+library(DALEX)
+library(dials)
+library(dplyr)
+library(ggplot2)
+library(infer)
+library(modeldata)
+library(oz)
+library(parsnip)
+library(pastclim)
+library(purrr)
+library(readr)
+library(recipes)
+library(rsample)
+library(rworldmap)
+library(sf)
+library(tidyr)
+library(tidymodels)
+library(tidysdm)
+library(tidyterra)
+library(tibble)
+library(tune)
+library(terra)
+library(workflows)
+library(workflowsets)
+library(gtools)
+library(fs)
+```
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+Aust_extent <- terra::ext(110, 152.5, -42.5, -7.5)
 ```
 ____Add Palaeoview Data
 ```{r bio05}
@@ -62,9 +97,40 @@ climate_bio12 <- pastclim::region_series(
   crop = vect(Aust_extent)
 )
 ```
+
+```{r Import new landmask }
+# Define the directory containing the landmask files and list all files that match the regular expression ".+ka_land.asc"
+masks <- "../Data/raw/landmask/" %>% 
+  
+   # List all files in the specified directory that match the regular expression
+  dir_ls(regexp = ".+ka_land.asc") %>%  
+ 
+  # Sort the filenames in a human-readable order
+  gtools::mixedsort() %>%  
+  
+  # Select the first 24 files from the sorted list
+  .[1:24] %>%  
+  
+   # Load each selected file as a raster
+  map(rast) %>% 
+  
+  # Set the CRS for each raster to WGS84
+  map(~ project(.x, "+proj=longlat +datum=WGS84 +no_defs +ellps=WGS84 +towgs84=0,0,0")) %>%  
+  
+  # Reduce the resolution of each raster by a factor of 10
+  map(aggregate, fact = 10) %>% 
+  
+  # Crop each raster to the extent of Australia defined by Aust_extent
+  map(crop, y = climate_bio12)  
+
+# Combine the individual rasters into a single SpatRaster object
+SpatRast_land_mask <- rast(masks)
+
+```
 ```{r}
 # Combine the climate variables into a single SpatRaster dataset called 'climate_full'
-climate_full <- c(climate_bio05, climate_bio06, climate_bio12)
+climate_full <- c(climate_bio05, climate_bio06, climate_bio12) %>% 
+map(mask,SpatRast_land_mask)
 
 saveRDS(climate_full, "C:/github/SNR_SDM/Data/processed/paleoview/climate_full.rds")
 ```

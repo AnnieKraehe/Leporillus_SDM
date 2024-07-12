@@ -9,9 +9,6 @@ output: html_document
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
-
-
-
 ```{r libraries,}
 # Load necessary libraries for various tasks including data manipulation, spatial analysis, plotting, and machine learning
 library(broom)
@@ -44,12 +41,13 @@ library(gtools)
 library(fs)
 ```
 
-
 ```{r Set the working directory}
 
 knitr::opts_knit$set(root.dir =("C:/github/SNR_SDM/Data/processed"))
 ```
+
 Read in the 'apicalis.csv' file, print its contents, convert to sf, and set the CRS
+
 ```{r read file}
 setwd("C:/github/SNR_SDM/Data/processed")
 apicalis <- read_csv("apicalis.csv") %>%
@@ -59,13 +57,14 @@ apicalis <- read_csv("apicalis.csv") %>%
 
 ```
 
-Create an extent object for Australia using s min and max X and Y coordinates
-Object type: Extent (terra package)
+Create an extent object for Australia using s min and max X and Y coordinates Object type: Extent (terra package)
+
 ```{r}
 Aust_extent <- terra::ext(110, 152.5, -42.5, -7.5)
 ```
 
-______  LAND MASKS
+\_\_\_\_\_\_ LAND MASKS
+
 ```{r Import new landmask }
 # Define the directory containing the landmask files and list all files that match the regular expression ".+ka_land.asc"
 masks <- "../Data/raw/landmask/" %>% 
@@ -95,21 +94,23 @@ masks <- "../Data/raw/landmask/" %>%
 SpatRast_land_mask <- rast(masks)
 
 ```
-Create a land mask for the present time using the 'Krapp2021' dataset from the 'pastclim' package
-Object type: SpatRaster where X =longitude, Y = latitude, Z = time
+
+Create a land mask for the present time using the 'Krapp2021' dataset from the 'pastclim' package Object type: SpatRaster where X =longitude, Y = latitude, Z = time
+
 ```{r creat current landmask for Austrlia}
 land_mask_current <- pastclim::get_land_mask(time_bp = 0, dataset = "Krapp2021") %>%
   crop(vect(Aust_extent))
 ```
+
 Create a single raster from the first layer of the 'masks' list = current landmask
+
 ```{r creat current landmask}
 # lower resolution option
 land_mask_current2 <- masks[[1]]
 ```
 
+\_\_\_Use ggplots to plot apicalis occurrence with current land mask
 
-
-___Use ggplots to plot apicalis occurrence with current land mask
 ```{r Plot the data using ggplot2}
 ggplot() +
   geom_spatraster(data = land_mask_current, aes()) +  # Add the land mask as a spatial raster layer
@@ -117,14 +118,12 @@ ggplot() +
   geom_sf(data = apicalis, aes(col = time_bp))  # Add the 'apicalis2' sf object as spatial features, colouring by the 'time_bp' column
 ```
 
-
 ```{r read in palaoview variables}
 climate_full <- readRDS("C:/github/SNR_SDM/Data/processed/paleoview/climate_full.rds")
 ```
+
 ```{r}
-apicalis <- sample_pseudoabs_time(apicalis |>
-                                     #filter apicalis to within 21ka
-                                     filter(time_bp > -21000, time_bp < -100),
+apicalis2 <- sample_pseudoabs_time(apicalis,
                                    n_per_presence = 3,
                                    raster = climate_full,
                                    time_col = "time_bp",
@@ -132,12 +131,8 @@ apicalis <- sample_pseudoabs_time(apicalis |>
                                    method = c("dist_min", km2m(70)))
 
 ggplot() +
-  geom_spatraster(data = land_mask, aes(fill = land_mask_0)) +
+  geom_spatraster(data = land_mask_current, aes(fill = land_mask_0)) +
   scale_fill_terrain_c() +
-  geom_sf(data = apicalis, aes(col = class))
+  geom_sf(data = apicalis2, aes(col = class))
 
 ```
-
-
-
-
