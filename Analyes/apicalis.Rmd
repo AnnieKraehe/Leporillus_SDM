@@ -115,7 +115,7 @@ ggplot() +
   geom_sf(data = apicalis2, aes(col = class))
 
 ```
-retrieve climate data for this region
+#retrieve climate data for this region
 
 ```{r extract climate for region}
 apicalis_df <- apicalis2 %>%
@@ -245,46 +245,37 @@ walk(1:1046, function(timestep) {
          filename = paste0("map_", year_bp, ".png"))
 })
 ```
+#partial dependance profile
+explain importance of variables
+```{r PDP}
+explainer_apicalis_ens <- explain_tidysdm(apicalis_ensemble)
 
-# ##explain importance of variables
-# 
-# explainer_apicalis_ens <- explain_tidysdm(apicalis_ensemble)
-# 
-# vip_ensemble <- model_parts(explainer = explainer_apicalis_ens)
-# plot(vip_ensemble)
-# 
-# pdp_bio12 <- model_profile(explainer_apicalis_ens, N = 500, variables = "bio12")
-# plot(pdp_bio12)
-# 
-# # ################  Step 2   ###################
-#build and Australia shape vector
-australia_shape <- st_read("C:/github/SNR_SDM/Data/raw/Australia_shape")
-australia_shape <- st_transform(australia_shape, crs = crs(prediction_lgm))
-#
-plot(australia_shape["geometry"], col = NA, border = 'red', lwd = 2, main = "Outline of Australia")
+vip_ensemble <- model_parts(explainer = explainer_apicalis_ens)
+plot(vip_ensemble)
 
-# Create a raster template
-rast_template <- rast(nrows=100, ncols=100, ext=ext(australia_shape))  # Adjust resolution as needed
+pdp_bio12 <- model_profile(explainer_apicalis_ens, N = 500, variables = "bio12")
+plot(pdp_bio12)
+```
+```{r PDP bio05}
+explainer_apicalis_ens <- explain_tidysdm(apicalis_ensemble)
 
-# Rasterize the vector outline
-Aust_raster <- rasterize(australia_shape, rast_template, field="AUS_CODE21", background=NA)
+vip_ensemble <- model_parts(explainer = explainer_apicalis_ens)
+plot(vip_ensemble)
 
-# Plot the prediction_lgm raster
-plot(prediction_lgm, main = "apicalis -30ka")
+pdp_bio05 <- model_profile(explainer_apicalis_ens, N = 500, variables = "bio05")
+plot(pdp_bio05)
+```
+```{r PDP bio06}
+explainer_apicalis_ens <- explain_tidysdm(apicalis_ensemble)
 
+vip_ensemble <- model_parts(explainer = explainer_apicalis_ens)
+plot(vip_ensemble)
+
+pdp_bio06 <- model_profile(explainer_apicalis_ens, N = 500, variables = "bio06")
+plot(pdp_bio06)
+```
 
   
-
-# Check if the geometries are polygons and handle accordingly
- #if (any(st_geometry_type(australia_shape) %in% c("POLYGON", "MULTIPOLYGON"))) {
- plot(st_geometry(australia_shape), col = NA, border = 'red', lwd = 2, add = TRUE) 
- #else {
-#  coords <- st_coordinates(st_geometry(australia_shape))
- # lines(coords, col = 'red', lwd = 2)
-#} 
-# Overlay the vector outline
-#plot(st_geometry(australia_shape))
-#
 
 
 
