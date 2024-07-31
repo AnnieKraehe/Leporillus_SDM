@@ -8,7 +8,7 @@ output: html_document
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 ```
-
+#Libraries
 ```{r libraries,}
 # Load necessary libraries for various tasks including data manipulation, spatial analysis, plotting, and machine learning
 library(broom)
@@ -41,11 +41,13 @@ library(gtools)
 library(fs)
 ```
 
+#Set the working directory
 ```{r Set the working directory}
 
 knitr::opts_knit$set(root.dir =("C:/github/SNR_SDM/Data/processed"))
 ```
 
+#Read Apicalis data
 Read in the 'apicalis.csv' file, print its contents, convert to sf, and set the CRS
 
 ```{r read file}
@@ -57,59 +59,34 @@ apicalis <- read_csv("apicalis.csv") %>%
 
 ```
 
-Create an extent object for Australia using s min and max X and Y coordinates Object type: Extent (terra package)
+#Create Aust_extent
+an extent object for Australia using s min and max X and Y coordinates Object type: Extent (terra package)
 
 ```{r}
 Aust_extent <- terra::ext(110, 152.5, -42.5, -7.5)
 ```
 
-\_\_\_\_\_\_ LAND MASKS
+#Land masks
+(other land masks created in paleoview code file)
 
-```{r Import new landmask }
-# Define the directory containing the landmask files and list all files that match the regular expression ".+ka_land.asc"
-masks <- "../Data/raw/landmask/" %>% 
-  
-   # List all files in the specified directory that match the regular expression
-  dir_ls(regexp = ".+ka_land.asc") %>%  
- 
-  # Sort the filenames in a human-readable order
-  gtools::mixedsort() %>%  
-  
-  # Select the first 24 files from the sorted list
-  .[1:24] %>%  
-  
-   # Load each selected file as a raster
-  map(rast) %>% 
-  
-  # Set the CRS for each raster to WGS84
-  map(~ project(.x, "+proj=longlat +datum=WGS84 +no_defs +ellps=WGS84 +towgs84=0,0,0")) %>%  
-  
-  # Reduce the resolution of each raster by a factor of 10
-  map(aggregate, fact = 10) %>% 
-  
-  # Crop each raster to the extent of Australia defined by Aust_extent
-  map(crop, y = Aust_extent)  
-
-# Combine the individual rasters into a single SpatRaster object
-SpatRast_land_mask <- rast(masks)
-
-```
-
-Create a land mask for the present time using the 'Krapp2021' dataset from the 'pastclim' package Object type: SpatRaster where X =longitude, Y = latitude, Z = time
-
-```{r creat current landmask for Austrlia}
-land_mask_current <- pastclim::get_land_mask(time_bp = 0, dataset = "Krapp2021") %>%
-  crop(vect(Aust_extent))
-```
-
+##current land mask from paleoview
 Create a single raster from the first layer of the 'masks' list = current landmask
-
-```{r creat current landmask}
-# lower resolution option
-land_mask_current2 <- masks[[1]]
+```{r}
+#PV_land_mask_t0 <- masks[[1]] #paleoview land mask
 ```
 
-\_\_\_Use ggplots to plot apicalis occurrence with current land mask
+
+##Krapp2021
+Create a land mask for the present time using the 'Krapp2021' dataset from the 'pastclim' package Object type: SpatRaster where X =longitude, Y = latitude, Z = time
+```{r}
+land_mask_current <- pastclim::get_land_mask(time_bp = 0, dataset = "Krapp2021") %>%
+  crop(vect(Aust_extent)) %>% 
+  aggregate(fact = 5, fun = "mean", na.rm = T)
+```
+
+
+#plot apicalis occurrence
+Use ggplots to plot apicalis occurrence with current land mask
 
 ```{r Plot the data using ggplot2}
 ggplot() +
@@ -123,16 +100,192 @@ climate_full <- readRDS("C:/github/SNR_SDM/Data/processed/paleoview/climate_full
 ```
 
 ```{r}
-apicalis2 <- sample_pseudoabs_time(apicalis,
+apicalis2 <- sample_pseudoabs_time(apicalis %>% 
+                                     filter(time_bp > -20000,
+                                            time_bp < -90),
                                    n_per_presence = 3,
-                                   raster = climate_full,
+                                   raster = climate_full[[1]],
                                    time_col = "time_bp",
                                    lubridate_fun = pastclim::ybp2date,
-                                   method = c("dist_min", km2m(70)))
+                                   method = c("dist_min", km2m(150)))
 
 ggplot() +
-  geom_spatraster(data = land_mask_current, aes(fill = land_mask_0)) +
+  geom_spatraster(data = land_mask_current) +
   scale_fill_terrain_c() +
   geom_sf(data = apicalis2, aes(col = class))
+
+```
+retrieve climate data for this region
+
+```{r extract climate for region}
+apicalis_df <- apicalis2 %>%
+  dplyr::bind_cols(sf::st_coordinates(apicalis2)) %>%
+  mutate(time_bp = date2ybp(time_step)) %>% 
+  as.data.frame() %>%
+  select(-geometry)
+# get climate
+apicalis_df <- location_slice_from_region_series(apicalis_df,
+                                                 region_series = climate_full)
+```
+add the climate reconstructions to the sf object, and remove the time_step
+as we don't need it for modelling
+
+```{r add climate to sf}
+apicalis4 <- apicalis2 %>%
+  bind_cols(apicalis_df[, c("bio05", "bio06", "bio12")]) %>%
+  select(-time_step) %>%
+  filter(!is.na(.$bio05))
+```
+
+# Fit the model by crossvalidation
+
+ Next, we need to set up a recipe to define how to handle our dataset. We don’t want to transform our data, so we just need to define the formula (class is the outcome, all other variables are predictors; note that, for sf objects, geometry is automatically ignored as a predictor):
+
+
+```{r make recipe}
+apicalis_rec <- recipe(apicalis4, formula = class ~ .)
+apicalis_rec
+```
+
+We can quickly check that we have the variables that we want with:
+
+`apicalis_rec$var_info`
+
+We now build a workflow_set of different models, defining which hyperparameters we want to tune. We will use glm, gam, random forest and boosted trees as our models, so only random forest and boosted trees have tunable hyperparameters. For the most commonly used models, tidysdm automatically chooses the most important parameters, but it is possible to fully customise model specifications.
+
+```{r specify models}
+apicalis_models <-
+  # create the workflow_set
+  workflow_set(
+    preproc = list(default = apicalis_rec),
+    models = list(
+      # the standard glm specs  (no params to tune)
+      glm = sdm_spec_glm(),
+      # the standard sdm specs (no params to tune)
+      gam = sdm_spec_gam(),
+      # rf specs with tuning
+      rf = sdm_spec_rf(),
+      # boosted tree model (gbm) specs with tuning
+      gbm = sdm_spec_boost_tree()
+    ),
+    # make all combinations of preproc and models,
+    cross = TRUE
+  ) %>%
+  # set formula for gams
+  update_workflow_model("default_gam",
+                        spec = sdm_spec_gam(),
+                        formula = gam_formula(apicalis_rec)
+  ) %>%
+  # tweak controls to store information needed later to create the ensemble
+  option_add(control = control_ensemble_grid())
+```
+Note that gams are unusual, as we need to specify a formula to define to which variables we will fit smooths. By default, gam_formula() fits a smooth to every continuous predictor, but a custom formula can be provided instead.
+
+We now want to set up a spatial block cross-validation scheme to tune and assess our models:
+
+```{r set up cross validation}
+library(tidysdm)
+set.seed(1005)
+apicalis_cv <- spatial_block_cv(apicalis4, v = 5)
+autoplot(apicalis_cv)
+```
+
+We can now use the block CV folds to tune and assess the models:
+
+```{r tune models}
+set.seed(123)
+apicalis_models <- apicalis_models %>%
+  workflow_map("tune_grid",
+               resamples = apicalis_cv, grid = 5,
+               metrics = sdm_metric_set(), verbose = TRUE)
+```
+
+Note that workflow_set correctly detects that we have no tuning parameters for glm and gam. We can have a look at the performance of our models with:
+autoplot(apicalis_models)
+
+Now let’s create an ensemble, selecting the best set of parameters for each model (this is really only relevant for the random forest, as there were not hype-parameters to tune for the glm and gam). We will use the Boyce continuous index as our metric to choose the best random forest and boosted tree. When adding members to an ensemble, they are automatically fitted to the full training dataset, and so ready to make predictions.
+
+```{r ensemble}
+apicalis_ensemble <- simple_ensemble() %>% add_member(apicalis_models, metric = "boyce_cont")
+
+autoplot(apicalis_ensemble)
+```
+We can now make predictions with this ensemble (using the default option of taking the mean of the predictions from each model) for the Last Glacial Maximum (LGM, 21,000 years ago).
+
+```{r create LGM}
+climate_lgm <- rast(list(climate_full[[1]][[1]], climate_full[[2]][[1]], climate_full[[3]][[1]]))
+names(climate_lgm) <- c("bio05", "bio06", "bio12")
+```
+
+And predict using the ensemble:
+
+```{r predict lgm}
+prediction_lgm <- predict_raster(apicalis_ensemble, climate_lgm)
+ggplot() +
+  geom_spatraster(data = prediction_lgm, aes(fill = mean)) +
+  scale_fill_terrain_c(name = "Probability\nof occurrence")
+```
+
+Let's make a whole stack of predictions and write the maps to a folder.
+
+```{r stack o maps}
+walk(1:1046, function(timestep) {
+  year_bp <- time(bio12)[timestep] - 2000
+  climate_snapshot <- rast(list(climate_full[[1]][[timestep]], 
+                           climate_full[[2]][[timestep]], 
+                           climate_full[[3]][[timestep]]))
+  names(climate_snapshot) <- c("bio05", "bio06", "bio12")
+  prediction1 <- predict_raster(apicalis_ensemble, climate_snapshot)
+  p <- ggplot() +
+    geom_spatraster(data = prediction1, aes(fill = mean)) +
+    scale_fill_terrain_c(name = "Probability\nof occurrence") +
+    ggtitle(paste0("Years BP: ", year_bp))
+  ggsave(path= "C:/github/SNR_SDM/Results/paleoview",
+         plot = p,
+         filename = paste0("map_", year_bp, ".png"))
+})
+```
+
+# ##explain importance of variables
+# 
+# explainer_apicalis_ens <- explain_tidysdm(apicalis_ensemble)
+# 
+# vip_ensemble <- model_parts(explainer = explainer_apicalis_ens)
+# plot(vip_ensemble)
+# 
+# pdp_bio12 <- model_profile(explainer_apicalis_ens, N = 500, variables = "bio12")
+# plot(pdp_bio12)
+# 
+# # ################  Step 2   ###################
+#build and Australia shape vector
+australia_shape <- st_read("C:/github/SNR_SDM/Data/raw/Australia_shape")
+australia_shape <- st_transform(australia_shape, crs = crs(prediction_lgm))
+#
+plot(australia_shape["geometry"], col = NA, border = 'red', lwd = 2, main = "Outline of Australia")
+
+# Create a raster template
+rast_template <- rast(nrows=100, ncols=100, ext=ext(australia_shape))  # Adjust resolution as needed
+
+# Rasterize the vector outline
+Aust_raster <- rasterize(australia_shape, rast_template, field="AUS_CODE21", background=NA)
+
+# Plot the prediction_lgm raster
+plot(prediction_lgm, main = "apicalis -30ka")
+
+
+  
+
+# Check if the geometries are polygons and handle accordingly
+ #if (any(st_geometry_type(australia_shape) %in% c("POLYGON", "MULTIPOLYGON"))) {
+ plot(st_geometry(australia_shape), col = NA, border = 'red', lwd = 2, add = TRUE) 
+ #else {
+#  coords <- st_coordinates(st_geometry(australia_shape))
+ # lines(coords, col = 'red', lwd = 2)
+#} 
+# Overlay the vector outline
+#plot(st_geometry(australia_shape))
+#
+
+
 
 ```

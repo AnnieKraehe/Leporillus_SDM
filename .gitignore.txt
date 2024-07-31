@@ -2,3 +2,5 @@
 *.tif
 *.png
 *.shp
+*.png
+*.asc
