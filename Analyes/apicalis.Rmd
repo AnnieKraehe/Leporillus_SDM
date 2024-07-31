@@ -67,7 +67,7 @@ Aust_extent <- terra::ext(110, 152.5, -42.5, -7.5)
 ```
 
 #Land masks
-(other land masks created in paleoview code file)
+***Run Incorporate paleoview variables code file here***
 
 ##current land mask from paleoview
 Create a single raster from the first layer of the 'masks' list = current landmask

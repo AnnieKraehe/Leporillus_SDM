@@ -43,7 +43,7 @@ knitr::opts_chunk$set(echo = TRUE)
 ```{r}
 Aust_extent <- terra::ext(110, 152.5, -42.5, -7.5)
 ```
-____Add Palaeoview Data
+#Add Palaeoview Data
 ```{r bio05}
 # Load the bio05 spat raster data from the NetCDF file
 bio5 <- rast("C:/github/SNR_SDM/Data/raw/Palaeoview_data/bio05.nc")
@@ -124,13 +124,16 @@ masks <- "../Data/raw/landmask/" %>%
   map(crop, y = climate_bio12)  
 
 # Combine the individual rasters into a single SpatRaster object
-SpatRast_land_mask <- rast(masks)
+PV_land_mask_all <- rast(masks)
 
 ```
 ```{r}
 # Combine the climate variables into a single SpatRaster dataset called 'climate_full'
 climate_full <- c(climate_bio05, climate_bio06, climate_bio12) %>% 
-map(mask,SpatRast_land_mask)
+map(mask,land_mask_current) %>% sds()
+```
 
+#save file
+```{r}
 saveRDS(climate_full, "C:/github/SNR_SDM/Data/processed/paleoview/climate_full.rds")
 ```
