@@ -129,11 +129,15 @@ PV_land_mask_all <- rast(masks)
 ```
 ```{r}
 # Combine the climate variables into a single SpatRaster dataset called 'climate_full'
-climate_full <- c(climate_bio05, climate_bio06, climate_bio12) %>% 
+varnames(climate_bio05) <- "bio05"
+varnames(climate_bio06) <- "bio06"
+varnames(climate_bio12) <- "bio12"
+climate_full <- list(climate_bio05, climate_bio06, climate_bio12) %>% 
 map(mask,land_mask_current) %>% sds()
+names(climate_full) <- c("bio05","bio06", "bio12")
 ```
 
 #save file
 ```{r}
-saveRDS(climate_full, "C:/github/SNR_SDM/Data/processed/paleoview/climate_full.rds")
+writeCDF(climate_full, "C:/github/SNR_SDM/Data/processed/paleoview/climate_full.nc")
 ```
