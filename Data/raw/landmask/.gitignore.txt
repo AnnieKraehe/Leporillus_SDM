@@ -4,4 +4,9 @@
 *.shp
 *.png
 *.asc
+*.nc
+*.csv
+*.asc
+*.1_89_time-slices
+
 /landmask/
