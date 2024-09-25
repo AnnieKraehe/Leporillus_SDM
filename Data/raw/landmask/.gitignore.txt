@@ -1,0 +1,7 @@
+*.pdf
+*.tif
+*.png
+*.shp
+*.png
+*.asc
+/landmask/
