@@ -4,5 +4,3 @@
 *.shp
 *.png
 *.asc
-/landmask/
-/Palaeoview_data/
