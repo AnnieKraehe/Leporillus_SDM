@@ -1,6 +1,6 @@
-**.pdf
-**.tif
-**.png
-**.shp
-**.png
-\Data\raw\landmask\
+*.pdf
+*.tif
+*.png
+*.shp
+*.png
+/Data/raw/landmask/
