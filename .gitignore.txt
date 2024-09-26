@@ -4,4 +4,4 @@
 *.shp
 *.png
 *.asc
-/landmask/
+\landmask\
