@@ -239,10 +239,10 @@ walk(1:1046, function(timestep) {
   p <- ggplot() +
     geom_spatraster(data = prediction1, aes(fill = mean)) +
     scale_fill_terrain_c(name = "Probability\nof occurrence") +
-    ggtitle(paste0("Years BP: ", year_bp))
-  ggsave(path= "C:/github/SNR_SDM/Results/paleoview",
+    ggtitle(paste0("Paleoview model conditor Years BP: ", year_bp))
+  ggsave(path= "C:/github/SNR_SDM/Results/conditorpaleoview",
          plot = p,
-         filename = paste0("map_", year_bp, ".png"))
+         filename = paste0("Paleoview_conditor_map_", year_bp, ".png"))
 })
 ```
 #partial dependance profile
