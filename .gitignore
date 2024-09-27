@@ -3,4 +3,5 @@
 *.png
 *.shp
 *.png
-/Data/raw/landmask/
+*.tar
+\Data\raw\landmask\
