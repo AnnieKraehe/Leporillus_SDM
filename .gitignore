@@ -2,6 +2,7 @@
 *.tif
 *.png
 *.shp
-*.png
 *.tar
-\Data\raw\landmask\
+*.jpg
+*.jpeg
+Data\raw\landmask\
