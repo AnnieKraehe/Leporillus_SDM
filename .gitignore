@@ -5,4 +5,6 @@
 *.tar
 *.jpg
 *.jpeg
+*.gif
+*.zip
 Data/raw/landmask/
