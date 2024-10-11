@@ -1,0 +1,5 @@
+This is made using the "apicalis Krapp 2.R" code, which uses a modified version of the code from the tidysdm website:
+
+https://evolecolgroup.github.io/tidysdm/articles/a1_palaeodata_application.html
+
+This code is better than the paleoview code. 
