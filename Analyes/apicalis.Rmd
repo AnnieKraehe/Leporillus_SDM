@@ -5,6 +5,8 @@ date: "2024-06-20"
 output: html_document
 ---
 
+# This document uses the paleoview climate model and code written by July
+
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 ```
@@ -109,8 +111,8 @@ climate_full <- sds("C:/github/SNR_SDM/Data/processed/paleoview/climate_full.nc"
 # Generate pseudo-absences for apicalis data, focusing on occurrences between 20,000 and 90 years ago
 ```{r}
 apicalis2 <- sample_pseudoabs_time(apicalis %>% 
-                                     filter(time_bp > -500, # Filter apicalis occurrences older than 20,000 years
-                                            time_bp < -90), # and younger than 90 years
+                                     filter(time_bp == -1000), # Filter apicalis occurrences older than 20,000 years
+                                           
                                    n_per_presence = 3, # Generate 3 pseudo-absences per presence point
                                    raster = climate_full[[1]], # Use the first layer of climate data as the reference raster
                                    time_col = "time_bp", # Specify the time column
@@ -272,9 +274,9 @@ walk(1:1046, function(timestep) {
     ggtitle(paste0("Paleoview model apicalis Years BP: ", year_bp))  # Add the title showing the year BP
 
   # Save the plot as a PNG file in the specified folder, naming it according to the year BP
-  ggsave(path = "C:/github/SNR_SDM/Results/apicalispaleoview",
+  ggsave(path = "C:/github/SNR_SDM/Results/2apicalispaleoview",
          plot = p,
-         filename = paste0("apicalis_map_", year_bp, ".png"))
+         filename = paste0("2apicalis_map_", year_bp, ".png"))
 })
 ```
 # Create an explainer object for the ensemble model
