@@ -4,7 +4,7 @@ author: "Annie"
 date: "2024-06-20"
 output: html_document
 ---
-
+Using code written for paleoview
 ```{r setup, include=FALSE}
 # Set global chunk options to display code by default
 knitr::opts_chunk$set(echo = TRUE)
@@ -108,14 +108,16 @@ climate_full <- pastclim::region_series(
 # Sample Pseudo-Absences and Plot Apicalis Occurrence with Land Mask
 ```{r}
 # Sample pseudo-absences for Apicalis occurrence points between 300 and 90 years before present
-apicalis2 <- sample_pseudoabs_time(apicalis %>% 
-                                     filter(time_bp > -300,
-                                            time_bp < -90),  # Filter for time_bp between -20000 and -90
-                                   n_per_presence = 3,  # Generate 3 pseudo-absences per presence point
-                                   raster = climate_full[[1]],  # Use the first layer of the climate data for sampling
-                                   time_col = "time_bp",  # Specify the time column for matching climate data
-                                   lubridate_fun = pastclim::ybp2date,  # Convert time_bp to date using pastclim function
-                                   method = c("dist_min", km2m(150)))  # Ensure pseudo-absences are at least 150 km away
+apicalis2 <- sample_pseudoabs_time(apicalis %>%
+                                     filter(time_bp == -300),
+                                   n_per_presence = 3, # Generate 3 pseudo-absences per presence point
+                                   raster = climate_full[[1]], # Use the first layer of climate data as the reference raster
+                                   time_col = "time_bp", # Specify the time column
+                                   lubridate_fun = pastclim::ybp2date, # Convert years before present (ybp) to date
+                                   method = c("dist_min", km2m(70))) # Ensure pseudo-absences are at least 150 km away
+
+
+
 
 # Plot Apicalis occurrence with the current land mask
 ggplot() +
@@ -245,12 +247,14 @@ walk(760:800, function(timestep) {
   p <- ggplot() +
     geom_spatraster(data = prediction1, aes(fill = mean)) +  # Add the prediction raster
     scale_fill_terrain_c(name = "Probability\nof occurrence") +  # Use a terrain color scale
-    ggtitle(paste0("Krapp2021 Model apicalis Years BP: ", year_bp))  # Add a title with the year before present
+    ggtitle(paste0("Krapp 70km apicalis Years BP: ", year_bp))  # Add a title with the year before present
 
   # Save the plot to a folder with filenames indicating the year BP
-  ggsave(path= "C:/github/SNR_SDM/Results/apicalisKrapp2021",
-         plot = p,
-         filename = paste0("apicalis_map_", year_bp, ".png"))
+  ggsave(filename = paste0("C:/github/SNR_SDM/Results/Apicalis Krapp model/apicalis Krapp Methods = 70km/apicalis_map_", 
+                         year_bp, " Krapp 70km", ".png"),
+       plot = p,
+       width = 7, height = 7)
+
 })
 ```
 

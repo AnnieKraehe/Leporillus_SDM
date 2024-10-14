@@ -1,3 +1,6 @@
+
+#Using Code from Tidysdm website
+
 #install.packages("tidymodels")
 #install.packages("rworldmap")
 #install.packages("oz")
@@ -198,7 +201,7 @@ autoplot(apicalis_ensemble)
 #We can now make predictions with this ensemble (using the default option of taking the mean of the predictions from each model) for the Last Glacial Maximum (LGM, 21,000 years ago).
 
 climate_lgm <- pastclim::region_slice(
-  time_bp = -1000,
+  time_bp = -20000,
   bio_variables = climate_vars,
   data = "Krapp2021",
   crop = vect(Aust_extent))
@@ -209,7 +212,6 @@ ggplot() +
   geom_spatraster(data = prediction_lgm, aes(fill = mean)) +
   scale_fill_terrain_c() 
 
-# Create a Stack of Predictions for All Time Steps
 
 # Create a Stack of Predictions for All Time Steps
 
@@ -230,12 +232,13 @@ walk(760:800, function(timestep) {
   p <- ggplot() +
     geom_spatraster(data = prediction1, aes(fill = mean)) +  # Add the prediction raster
     scale_fill_terrain_c(name = "Probability\nof occurrence") +  # Use a terrain color scale
-    ggtitle(paste0("2 Krapp2021 Model apicalis Years BP: ", year_bp))  # Add a title with the year before present
+    ggtitle(paste0("Krapp2021 Model apicalis tidy sdm 70km Years BP: ", year_bp))  # Add a title with the year before present
   
   # Save the plot to a folder with filenames indicating the year BP
-  ggsave(path= "C:/github/SNR_SDM/Results/2apicalisKrapp2021",
+  ggsave(filename = paste0("C:/github/SNR_SDM/Results/Apicalis Krapp model/apicalis tidysdm Methods = 70km/apicalis_map_", 
+                           year_bp, "tidy sdm 70km", ".png"),
          plot = p,
-         filename = paste0("apicalis_map_", year_bp, ".png"))
+         width = 7, height = 7)
 })
 
 # Partial Dependence Profiles and Variable Importance
