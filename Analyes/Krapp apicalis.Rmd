@@ -251,7 +251,7 @@ walk(760:800, function(timestep) {
 
   # Save the plot to a folder with filenames indicating the year BP
   ggsave(filename = paste0("C:/github/SNR_SDM/Results/Apicalis Krapp model/apicalis Krapp Methods = 70km/apicalis_map_", 
-                         year_bp, " Krapp 70km", ".png"),
+                         year_bp, " Krapp70km", ".png"),
        plot = p,
        width = 7, height = 7)
 
@@ -285,4 +285,37 @@ plot(pdp_bio05)
 # Generate and plot a partial dependence profile for bio06
 pdp_bio06 <- model_profile(explainer_apicalis_ens, N = 500, variables = "bio06")
 plot(pdp_bio06)
+```
+
+```{r CLimate maps}
+# Create a Stack of Maps for Each Climate Variable
+walk2(c("bio05", "bio06", "bio12"), 1:3, ~{
+  var_name <- .x
+  var_idx <- .y
+  
+  # Create a folder for the variable if it doesn't exist
+  dir.create(paste0("C:/github/SNR_SDM/Results/Climate_Maps/", var_name), showWarnings = FALSE)
+
+  # Loop over 41 time steps (40ka in 1ka timesteps starting at 0)
+  walk(760:800, function(timestep) {
+    year_bp <- time(climate_full[[1]])[timestep] - 1950  # Calculate years before present
+    
+    # Extract climate data for the variable and timestep
+    climate_snapshot <- climate_full[[var_idx]][[timestep]]
+    names(climate_snapshot) <- var_name  # Assign name to layer
+    
+    # Plot the map
+    p <- ggplot() +
+      geom_spatraster(data = climate_snapshot, aes(fill = !!sym(var_name))) +  # Map variable
+      scale_fill_terrain_c(name = var_name) +  # Add terrain scale
+      ggtitle(paste0("Krapp Climate Variable: ", var_name, " - Years BP: ", year_bp))
+    
+    # Save the plot
+    ggsave(filename = paste0("C:/github/SNR_SDM/Results/Climate_Maps/", var_name, "/",
+                             var_name, "_map_", year_bp, ".png"),
+           plot = p,
+           width = 7, height = 7)
+  })
+})
+
 ```

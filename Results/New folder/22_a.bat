@@ -1,0 +1,7 @@
+@echo off
+setlocal enabledelayedexpansion
+set count=1
+for %%f in (*) do (
+    ren "%%f" "!count!_a%%~xf"
+    set /a count+=1
+)
