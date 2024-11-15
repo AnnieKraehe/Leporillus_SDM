@@ -1,0 +1,145 @@
+# Load required libraries
+library(terra)
+library(ggplot2)
+library(ggspatial)
+
+# Define file paths
+base_path <- "C:/github/SNR_SDM/Data/raw/Krapp2021"
+bio05_file <- file.path(base_path, "Krapp2021_bio05_v1.0.0.nc")
+bio06_file <- file.path(base_path, "Krapp2021_bio06_v1.0.0.nc")
+bio12_file <- file.path(base_path, "Krapp2021_bio12_v1.0.0.nc")
+
+# Define Australia's geographic extent
+Aust_extent <- ext(110, 152.5, -42.5, -7.5)
+
+# Load raster stacks
+bio05_stack <- rast(bio05_file)
+bio06_stack <- rast(bio06_file)
+bio12_stack <- rast(bio12_file)
+
+# Clip each raster stack to Australia's extent
+bio05_australia <- crop(bio05_stack, Aust_extent)
+bio06_australia <- crop(bio06_stack, Aust_extent)
+bio12_australia <- crop(bio12_stack, Aust_extent)
+
+# Define the desired time slices (in years BP)
+desired_times_bp <- seq(0, 40000, by = 1000)
+
+# Convert desired BP times to calendar years
+desired_times_cal <- 1970 - desired_times_bp
+
+# Extract the time slices from the raster
+time_info_cal <- time(bio05_australia)
+
+# Match desired times with available time layers
+time_indices <- sapply(desired_times_cal, function(year) {
+  which.min(abs(time_info_cal - year))
+})
+
+# Display matched layers and their time values
+matched_times <- data.frame(
+  Desired_BP = desired_times_bp,
+  Matched_Calendar_Year = time_info_cal[time_indices],
+  Matched_BP = 1970 - time_info_cal[time_indices]
+)
+print(matched_times)
+
+# Extract the baseline layer for 1970 (treated as 0 BP)
+baseline_index <- which(time_info_cal == 1970)
+if (length(baseline_index) == 0) {
+  stop("1970 (modern layer) not found in the time metadata.")
+}
+bio05_baseline <- bio05_australia[[baseline_index]]
+bio06_baseline <- bio06_australia[[baseline_index]]
+bio12_baseline <- bio12_australia[[baseline_index]]
+
+# Function to calculate the range of deviations
+calculate_range <- function(raster_stack, baseline_layer, time_indices) {
+  min_value <- Inf
+  max_value <- -Inf
+  
+  for (i in seq_along(time_indices)) {
+    timestep <- time_indices[i]
+    climate_layer <- raster_stack[[timestep]]
+    deviation_layer <- climate_layer - baseline_layer  # Calculate deviation
+    
+    # Update min and max values (convert global() result to numeric)
+    min_value <- min(min_value, as.numeric(global(deviation_layer, fun = "min", na.rm = TRUE)))
+    max_value <- max(max_value, as.numeric(global(deviation_layer, fun = "max", na.rm = TRUE)))
+  }
+  
+  return(c(min_value, max_value))
+}
+
+# Calculate ranges for each variable
+bio05_range <- calculate_range(bio05_australia, bio05_baseline, time_indices)
+bio06_range <- calculate_range(bio06_australia, bio06_baseline, time_indices)
+bio12_range <- calculate_range(bio12_australia, bio12_baseline, time_indices)
+
+print(paste("bio05 range:", paste(bio05_range, collapse = " - ")))
+print(paste("bio06 range:", paste(bio06_range, collapse = " - ")))
+print(paste("bio12 range:", paste(bio12_range, collapse = " - ")))
+
+# Define main folder for climate deviation maps
+deviation_main_folder <- "C:/github/SNR_SDM/Results/Climate_Deviation"
+if (!dir.exists(deviation_main_folder)) {
+  dir.create(deviation_main_folder, recursive = TRUE)
+  print(paste("Created main folder:", deviation_main_folder))
+} else {
+  print(paste("Main folder already exists:", deviation_main_folder))
+}
+
+# Function to calculate deviations and save maps with rainbow gradient
+calculate_and_save_deviation <- function(raster_stack, baseline_layer, desired_times_bp, time_indices, variable_name, deviation_main_folder, deviation_range) {
+  # Create a subfolder for the specific variable
+  deviation_folder <- file.path(deviation_main_folder, variable_name)
+  if (!dir.exists(deviation_folder)) {
+    dir.create(deviation_folder, recursive = TRUE)
+    print(paste("Created folder:", deviation_folder))
+  } else {
+    print(paste("Folder already exists:", deviation_folder))
+  }
+  
+  # Dynamic range settings
+  rainbow_colors <- rev(rainbow(7))  # Inverted rainbow gradient
+  min_value <- deviation_range[1]
+  max_value <- deviation_range[2]
+  
+  # Iterate through the matched time steps
+  for (i in seq_along(time_indices)) {
+    timestep <- time_indices[i]
+    year_bp <- desired_times_bp[i]  # Use desired BP labels directly
+    
+    # Extract the specific layer and calculate deviation
+    climate_layer <- raster_stack[[timestep]]
+    deviation_layer <- climate_layer - baseline_layer  # Calculate deviation
+    names(deviation_layer) <- variable_name
+    
+    # Create the ggplot with dynamic gradient
+    p <- ggplot() +
+      geom_spatraster(data = deviation_layer, aes(fill = !!sym(variable_name))) +
+      scale_fill_gradientn(
+        colors = rainbow_colors,
+        limits = c(min_value, max_value),  # Dynamic range for all maps
+        name = paste0(variable_name, " deviation")
+      ) +
+      ggtitle(paste0(variable_name, " Deviation - Year BP: ", year_bp))
+    
+    # Define the file path
+    file_path <- file.path(deviation_folder, paste0(variable_name, "_deviation_", year_bp, ".png"))
+    print(paste("Attempting to save:", file_path))
+    
+    # Save the plot
+    tryCatch({
+      ggsave(filename = file_path, plot = p, width = 7, height = 7)
+      cat("Saved deviation map for", variable_name, "Year BP:", year_bp, "to", file_path, "\n")
+    }, error = function(e) {
+      cat("Failed to save deviation map for", variable_name, "Year BP:", year_bp, "- Error:", e$message, "\n")
+    })
+  }
+}
+
+# Save deviation maps with calculated ranges
+calculate_and_save_deviation(bio05_australia, bio05_baseline, desired_times_bp, time_indices, "bio05", deviation_main_folder, bio05_range)
+calculate_and_save_deviation(bio06_australia, bio06_baseline, desired_times_bp, time_indices, "bio06", deviation_main_folder, bio06_range)
+calculate_and_save_deviation(bio12_australia, bio12_baseline, desired_times_bp, time_indices, "bio12", deviation_main_folder, bio12_range)
