@@ -1,0 +1,321 @@
+
+#Using Code from Tidysdm website
+install.packages("ranger")
+install.packages("xgboost")
+install.packages("terra")
+
+install.packages("tidymodels")
+install.packages("rworldmap")
+install.packages("oz")
+library(broom)
+library(recipes)
+library(dials)
+library(rsample)
+library(dplyr)
+library(tibble)
+library(ggplot2)
+library(tidyr)
+library(infer)
+library(tune)
+library(modeldata)
+library(workflows)
+library(parsnip)
+library(workflowsets)
+library(purrr)
+library(sf)
+library(terra)
+library (tidymodels)
+library (tidysdm)
+library (pastclim)
+library(rworldmap)
+library(readr)
+library(oz)
+library(DALEX)
+library(car)
+library(ranger)
+library(xgboost)
+#pastclim::download_dataset("Krapp2021")
+
+setwd("C:/github/SNR_SDM/Data/processed")
+apicalis <- read_csv("apicalis.csv")
+print(apicalis)
+
+#We convert our dataset into an sf data.frame so that we can easily plot it (here tidyterra shines):
+
+# Convert data frame to spatial features
+# Set the Coordinate reference system (CRS) to GDA2020 for use in Australia
+
+apicalis <- st_as_sf(apicalis, coords = c("longitude", "latitude")) |>
+  mutate(time_bp = time_bp)
+
+st_crs(apicalis) <- 4326
+
+
+
+#As a background to our presences, we will use the land mask for the present, taken from pastclim, and cut to cover Oceania:
+land_mask <- pastclim::get_land_mask(time_bp =, dataset = "Krapp2021")
+Aust_extent <- terra::ext(109.4919, 152.6379, -42.8198, -8.1955)
+
+
+land_mask <- crop (land_mask,vect(Aust_extent))
+land_mask_layer <- land_mask[[1]] 
+
+#tidyterra to plot:
+library(tidyterra)
+
+ggplot() +
+  geom_spatraster(data = land_mask_layer, aes()) +  # Add the land mask as a spatial raster layer
+  scale_fill_terrain_d() +  # Use a discrete terrain color scale for the land mask
+  geom_sf(data = apicalis, aes(col = time_bp))  # Plot Apicalis occurrence points, colored by time_bp
+
+
+
+
+
+#We now need a time series of palaeoclimate reconstructions. In this vignette, we will use the example dataset from pastclim. This dataset only has reconstructions every 5k years for the past 20k years at 1 degree resolution, with 3 bioclimatic variables. It will suffice for illustrative purposes, but we recommend that you download higher quality datasets with pastclim for real analysis. As for the land mask, we will cut the reconstructions to cover Europe only:
+# library(pastclim)
+# climate_vars <- c('bio01','bio05','bio06','bio12','bio13','bio14')
+# climate_full <- pastclim::region_series(
+#   bio_variables = climate_vars,
+#   data = "Krapp2021",
+#   crop = vect(Aust_extent)
+# )
+
+
+# #####VIF
+# 
+# 
+# apicalis<-data.frame(as.numeric(apicalis$class),apicalis$bio01,apicalis$bio05,apicalis$bio06,apicalis$bio12,apicalis$bio13,apicalis$bio14)
+# colnames(apicalis)<-c('presence','bio01','bio05','bio06','bio12','bio13','bio14')
+# 
+# 
+# vif(lm(presence~bio01+bio05+bio06+bio12+bio13+bio14,data = apicalis))
+# vif(lm(presence~bio01+bio05+bio06+bio13+bio14,data = apicalis))
+# vif(lm(presence~bio05+bio06+bio13+bio14,data = apicalis))
+
+
+# climate_vars <- c('bio05','bio06','bio13','bio14')
+# climate_full <- pastclim::region_series(
+#   bio_variables = climate_vars,
+#   data = "Krapp2021",
+#   crop = vect(Aust_extent)
+##
+climate_vars <- c('bio05','bio06','bio12')
+climate_full <- pastclim::region_series(
+  bio_variables = climate_vars,
+  data = "Krapp2021",
+  crop = vect(Aust_extent) )
+
+#Now we sample pseudo-absences (we will constraint them to be at least 70km away from any presences), selecting three times the number of presences
+
+set.seed(123)
+apicalis <- sample_pseudoabs_time(apicalis,
+                                  n_per_presence = 3,
+                                  raster = climate_full,
+                                  time_col = "time_bp",
+                                  lubridate_fun = pastclim::ybp2date,
+                                  method = c("dist_min", km2m(70)))
+
+#Let’s see our presences and absences:
+
+
+ggplot() +
+  geom_spatraster(data = land_mask_layer) +
+  scale_fill_terrain_d() +
+  geom_sf(data = apicalis, aes(col = class))
+
+
+#Now let’s get the climate for these location. pastclim requires a data frame with two columns with coordinates and a column of time in years before present (where negative values represent time in the past). We manipulate the sf object accordingly:
+
+apicalis_df <- apicalis %>%
+  dplyr::bind_cols(sf::st_coordinates(apicalis)) %>%
+  mutate(time_bp = date2ybp(time_step)) %>%
+  as.data.frame() %>%
+  select(-geometry)
+# get climate
+apicalis_df <- location_slice_from_region_series(apicalis_df,
+                                                 region_series = climate_full)
+
+# add the climate reconstructions to the sf object, and remove the time_step
+# as we don't need it for modelling
+apicalis <- apicalis %>%
+  bind_cols(apicalis_df[, climate_vars]) %>%
+  select(-time_step) %>%
+  filter(!is.na(.$bio05))
+
+
+#Fit the model by crossvalidation
+# Next, we need to set up a recipe to define how to handle our dataset. We don’t want to transform our data, so we just need to define the formula (class is the outcome, all other variables are predictors; note that, for sf objects, geometry is automatically ignored as a predictor):
+
+apicalis_rec <- recipe(apicalis, formula = class ~ .)
+apicalis_rec
+
+#We can quickly check that we have the variables that we want with:
+
+apicalis_rec$var_info
+
+#We now build a workflow_set of different models, defining which hyperparameters we want to tune. We will use glm, gam, random forest and boosted trees as our models, so only random forest and boosted trees have tunable hyperparameters. For the most commonly used models, tidysdm automatically chooses the most important parameters, but it is possible to fully customise model specifications.
+
+apicalis_models <-
+  # create the workflow_set
+  workflow_set(
+    preproc = list(default = apicalis_rec),
+    models = list(
+      # the standard glm specs  (no params to tune)
+      glm = sdm_spec_glm(),
+      # the standard sdm specs (no params to tune)
+      gam = sdm_spec_gam(),
+      # rf specs with tuning
+      rf = sdm_spec_rf(),
+      # boosted tree model (gbm) specs with tuning
+      gbm = sdm_spec_boost_tree()
+    ),
+    # make all combinations of preproc and models,
+    cross = TRUE
+  ) %>%
+  # set formula for gams
+  update_workflow_model("default_gam",
+                        spec = sdm_spec_gam(),
+                        formula = gam_formula(apicalis_rec)
+  ) %>%
+  # tweak controls to store information needed later to create the ensemble
+  option_add(control = control_ensemble_grid())
+#Note that gams are unusual, as we need to specify a formula to define to which variables we will fit smooths. By default, gam_formula() fits a smooth to every continuous predictor, but a custom formula can be provided instead.
+#We now want to set up a spatial block cross-validation scheme to tune and assess our models:
+
+library(tidysdm)
+set.seed(1005)
+apicalis_cv <- spatial_block_cv(apicalis, v = 5)
+autoplot(apicalis_cv)
+
+##########We can now use the block CV folds to tune and assess the models:
+
+set.seed(123)
+apicalis_models <- apicalis_models %>%
+  workflow_map("tune_grid",
+               resamples = apicalis_cv, grid = 5,
+               metrics = sdm_metric_set(), verbose = TRUE)
+#Note that workflow_set correctly detects that we have no tuning parameters for glm and gam. We can have a look at the performance of our models with:
+autoplot(apicalis_models)
+
+#Now let’s create an ensemble, selecting the best set of parameters for each model (this is really only relevant for the random forest, as there were not hype-parameters to tune for the glm and gam). We will use the Boyce continuous index as our metric to choose the best random forest and boosted tree. When adding members to an ensemble, they are automatically fitted to the full training dataset, and so ready to make predictions.
+
+apicalis_ensemble <- simple_ensemble() %>% add_member(apicalis_models, metric = "boyce_cont")
+
+autoplot(apicalis_ensemble)
+#We can now make predictions with this ensemble (using the default option of taking the mean of the predictions from each model) for the Last Glacial Maximum (LGM, 21,000 years ago).
+
+climate_lgm <- pastclim::region_slice(
+  time_bp = -20000,
+  bio_variables = climate_vars,
+  data = "Krapp2021",
+  crop = vect(Aust_extent))
+
+#And predict using the ensemble:
+prediction_lgm <- predict_raster(apicalis_ensemble, climate_lgm)
+ggplot() +
+  geom_spatraster(data = prediction_lgm, aes(fill = mean)) +
+  scale_fill_terrain_c() 
+
+
+#############################################################################
+library(purrr)
+library(terra)
+
+# Ensure the output directory exists
+output_dir <- "C:/github/SNR_SDM/Results/arcgis_rasters"
+if (!dir.exists(output_dir)) {
+  dir.create(output_dir, recursive = TRUE)
+}
+
+# Loop through time steps and save each prediction as a GeoTIFF
+time_steps <- seq(-40000, 0, by = 1000) 
+
+walk(time_steps, function(time_bp) {
+  # Create a climate raster for the given time_bp
+  climate_snapshot <- pastclim::region_slice(
+    time_bp = time_bp,
+    bio_variables = climate_vars,
+    data = "Krapp2021",
+    crop = vect(Aust_extent)
+  )
+  
+  # Predict using the ensemble
+  prediction <- predict_raster(apicalis_ensemble, climate_snapshot)
+  
+  # Generate output file name
+  output_path <- file.path(
+    output_dir,
+    paste0("apicalis_prediction_", abs(time_bp), "BP.tif")
+  )
+  
+  # Save the prediction as a GeoTIFF
+  writeRaster(
+    prediction,
+    filename = output_path,
+    filetype = "GTiff",  # Use 'filetype' instead of 'format'
+    overwrite = TRUE
+  )
+  
+  # Print confirmation
+  message(paste("Saved raster for time_bp:", time_bp, "to", output_path))
+})
+
+
+
+# # Create a Stack of Predictions for All Time Steps
+# 
+# # Loop over 40 time steps (40ka in 1ka timesteps) to create and save a map of predictions for each time step
+# walk(760:800, function(timestep) {
+#   year_bp <- time(climate_full[[1]])[timestep] - 1950  # Calculate years before present for each timestep
+#   
+#   # Create a climate snapshot for the current timestep
+#   climate_snapshot <- rast(list(climate_full[[1]][[timestep]], 
+#                                 climate_full[[2]][[timestep]], 
+#                                 climate_full[[3]][[timestep]]))
+#   names(climate_snapshot) <- c("bio05", "bio06", "bio12")  # Rename layers to match the climate variables
+#   
+#   # Predict species occurrence for the current climate snapshot
+#   prediction1 <- predict_raster(apicalis_ensemble, climate_snapshot)
+#   
+#   # Plot the predictions using ggplot2
+#   p <- ggplot() +
+#     geom_spatraster(data = prediction1, aes(fill = mean)) +  # Add the prediction raster
+#     scale_fill_terrain_c(name = "Probability\nof occurrence") +  # Use a terrain color scale
+#     ggtitle(paste0("Krapp2021 Model apicalis tidy sdm 70km Years BP: ", year_bp))  # Add a title with the year before present
+#   
+#   # Save the plot to a folder with filenames indicating the year BP
+#   ggsave(filename = paste0("C:/github/SNR_SDM/Results/Apicalis Krapp model/apicalis tidysdm Methods = 70km/apicalis_map_", 
+#                            year_bp, "tidy sdm 70km", ".png"),
+#          plot = p,
+#          width = 7, height = 7)
+# })
+
+# Partial Dependence Profiles and Variable Importance
+## PDP for bio12
+
+# Explain the ensemble model to generate partial dependence profiles and variable importance
+explainer_apicalis_ens <- explain_tidysdm(apicalis_ensemble)  # Create an explainer object for the ensemble model
+
+# Compute variable importance using the DALEX package
+vip_ensemble <- model_parts(explainer = explainer_apicalis_ens)  # Calculate variable importance
+plot(vip_ensemble)  # Plot the variable importance results
+
+# Generate a partial dependence profile for bio12
+pdp_bio12 <- model_profile(explainer_apicalis_ens, N = 500, variables = "bio12")  # Generate PDP for bio12
+plot(pdp_bio12)  # Plot the partial dependence profile for bio12
+
+
+## PDP for bio05
+
+# Generate and plot a partial dependence profile for bio05
+pdp_bio05 <- model_profile(explainer_apicalis_ens, N = 500, variables = "bio05")
+plot(pdp_bio05)
+
+
+## PDP for bio06
+
+# Generate and plot a partial dependence profile for bio06
+pdp_bio06 <- model_profile(explainer_apicalis_ens, N = 500, variables = "bio06")
+plot(pdp_bio06)
+
