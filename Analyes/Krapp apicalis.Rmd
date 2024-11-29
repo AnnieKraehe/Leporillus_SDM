@@ -209,6 +209,42 @@ apicalis_ensemble <- simple_ensemble() %>%
 autoplot(apicalis_ensemble)  # Plot the ensemble model performance
 ```
 
+ ```{r save_all_predictions_as_spatraster, message=FALSE, warning=FALSE}
+
+# Loop over 40 time steps (40ka in 1ka timesteps) to create and save a SpatRaster stack of predictions for each time step
+all_predictions <- vector("list", length = 41)  # Initialize list to store prediction rasters
+
+walk(760:800, function(timestep) {
+  year_bp <- time(climate_full[[1]])[timestep] - 1950  # Calculate years before present for each timestep
+
+  # Create a climate snapshot for the current timestep
+  climate_snapshot <- rast(list(climate_full[[1]][[timestep]], 
+                                climate_full[[2]][[timestep]], 
+                                climate_full[[3]][[timestep]]))
+  names(climate_snapshot) <- c("bio05", "bio06", "bio12")  # Rename layers to match the climate variables
+
+  # Predict species occurrence for the current climate snapshot
+  prediction_raster <- predict_raster(apicalis_ensemble, climate_snapshot)
+
+  # Store the prediction raster in the list
+  all_predictions[[timestep - 759]] <- prediction_raster  # Adjust the index to store rasters in the list correctly
+})
+
+# Combine all individual prediction rasters into a single SpatRaster stack
+all_predictions_stack <- rast(all_predictions)
+
+# Assign the SpatRaster stack to the R environment for further use
+all_predictions_raster <- all_predictions_stack
+
+# Save the stacked SpatRaster as a GeoTIFF (multilayer raster)
+output_file <- "C:/github/SNR_SDM/Results/all_time_steps_apicalis_model_40ka.tif"
+writeRaster(all_predictions_raster, filename = output_file, format = "GTiff", overwrite = TRUE)
+
+
+
+```
+
+
 # Make Predictions for the Last Glacial Maximum (LGM)
 ```{r create LGM}
 # Create a climate raster for the Last Glacial Maximum (LGM) using the correct layer (21) for 20,000 BP
@@ -227,6 +263,43 @@ ggplot() +
   geom_spatraster(data = prediction_lgm, aes(fill = mean)) +  # Add the prediction raster to the plot
   scale_fill_terrain_c(name = "Probability\nof occurrence")  # Use a terrain color scale to show probabilities
 ```
+
+```{r save_model_spatraster}
+# Initialize an empty SpatRaster stack
+apicalis_spatrast <- NULL
+
+# Loop through 40 time steps (40ka in 1ka timesteps) to create and stack rasters
+walk(760:800, function(timestep) {
+  year_bp <- time(climate_full[[1]])[timestep] - 1950  # Calculate years before present for each timestep
+  
+  # Create a climate snapshot for the current timestep
+  climate_snapshot <- rast(list(
+    climate_full[[1]][[timestep]], 
+    climate_full[[2]][[timestep]], 
+    climate_full[[3]][[timestep]]
+  ))
+  names(climate_snapshot) <- c("bio05", "bio06", "bio12")  # Rename layers to match the climate variables
+
+  # Predict species occurrence for the current climate snapshot
+  prediction_raster <- predict_raster(apicalis_ensemble, climate_snapshot)
+  
+  # Stack the prediction raster along the z-axis
+  apicalis_spatrast <<- if (is.null(apicalis_spatrast)) {
+    prediction_raster
+  } else {
+    c(apicalis_spatrast, prediction_raster)
+  }
+})
+
+# Assign time steps to the z-axis of the stacked raster
+time(apicalis_spatrast) <- time(climate_full[[1]])[760:800] - 1950
+
+# Save the stacked SpatRaster to a file
+output_file <- "C:/github/SNR_SDM/Results/Apicalis Krapp model/predictions_stack.tif"
+writeRaster(apicalis_spatrast, filename = output_file, overwrite = TRUE)
+```
+
+
 
 # Create a Stack of Predictions for All Time Steps
 ```{r stack o maps}
