@@ -41,6 +41,7 @@ library(workflows)
 library(workflowsets)
 library(gtools)
 library(fs)
+
 ```
 
 # Set the working directory
@@ -106,15 +107,97 @@ climate_full <- pastclim::region_series(
 ```
 
 # Sample Pseudo-Absences and Plot Apicalis Occurrence with Land Mask
-```{r}
+
+```{r} 
+
+# Implement stratified-random sampling in environmental space as suggested by Steen et al. (2024)
+
+# Define the number of strata for each variable
+num_strata <- 5  # Number of strata (adjust as needed)
+
+# Extract specific layers for each climate variable (e.g., first layer for the current time)
+bio05 <- climate_full[[1]][[1]]  # First layer of bio05
+bio06 <- climate_full[[2]][[1]]  # First layer of bio06
+bio12 <- climate_full[[3]][[1]]  # First layer of bio12
+
+# Combine environmental layers into a stack
+env_stack <- c(bio05, bio06, bio12)
+
+# Assign names to the layers
+names(env_stack) <- c("bio05", "bio06", "bio12")
+
+# Resample the land mask to match the resolution and extent of the environmental stack
+land_mask_resampled <- terra::resample(land_mask_current, env_stack, method = "near")  # Nearest neighbor interpolation
+
+# Define buffer distance for distance constraint
+buffer_distance <- 150000  # 150 km in meters
+
+# Generate pseudo-absences using stratified-random sampling
+set.seed(123)
+pseudo_absences <- sample_pseudoabs_time(
+  apicalis %>% filter(time_bp == -300),  # Filter presence points for time_bp == -300
+  n_per_presence = 3,  # Generate 3 pseudo-absences per presence point
+  raster = env_stack,  # Use the environmental stack as the reference raster
+  time_col = "time_bp",  # Specify the column for temporal filtering
+  lubridate_fun = pastclim::ybp2date,  # Convert years before present (ybp) to calendar years
+  method = c("dist_min", buffer_distance)  # Ensure pseudo-absences are at least 70 km away
+)
+
+# Ensure pseudo-absences are far from presences
+presence_buffer <- st_buffer(apicalis, dist = buffer_distance)  # Create presence buffer
+pseudo_absences_filtered <- pseudo_absences[!apply(st_intersects(pseudo_absences, presence_buffer, sparse = FALSE), 1, any), ]
+
+# Add time_step and class columns
+pseudo_absences_filtered <- pseudo_absences_filtered %>%
+  mutate(
+    time_bp = -300,  # Assign years before present
+    time_step = pastclim::ybp2date(time_bp),  # Convert to calendar years
+    class = "pseudoabs"  # Mark as pseudo-absence
+  )
+
+# Combine presences and pseudo-absences into a single dataset
+apicalis2 <- bind_rows(
+  apicalis %>% mutate(class = "presence", time_step = pastclim::ybp2date(-300)),
+  pseudo_absences_filtered
+)
+
+# Plot Apicalis occurrence and pseudo-absences with the resampled land mask
+ggplot() +
+  geom_spatraster(data = land_mask_resampled) +  # Plot resampled land mask
+  scale_fill_terrain_c() +
+  geom_sf(data = apicalis2, aes(color = class)) +
+  scale_color_manual(values = c("presence" = "blue", "pseudoabs" = "red")) +
+  theme_minimal() +
+  labs(title = "Stratified-Random Sampling in Environmental Space",
+       color = "Class")
+
+str(apicalis2)
+
+table(apicalis2$class)
+
+any(st_intersects(pseudo_absences_filtered, presence_buffer, sparse = FALSE))  # Should return FALSE
+
+# Align new apicalis2 structure with old structure
+apicalis2 <- apicalis2 %>%
+  select(class, time_step, geometry) %>%  # Keep only relevant columns
+  mutate(
+    class = factor(class, levels = c("presence", "pseudoabs"))  # Convert class to a factor
+  )
+
+# Validate structure
+str(apicalis2)
+table(apicalis2$class)
+
+```
+ ```{r old pseudo absence chunk}
 # Sample pseudo-absences for Apicalis occurrence points between 300 and 90 years before present
-apicalis2 <- sample_pseudoabs_time(apicalis %>%
+apicalis3 <- sample_pseudoabs_time(apicalis %>%
                                      filter(time_bp == -300),
                                    n_per_presence = 3, # Generate 3 pseudo-absences per presence point
                                    raster = climate_full[[1]], # Use the first layer of climate data as the reference raster
                                    time_col = "time_bp", # Specify the time column
                                    lubridate_fun = pastclim::ybp2date, # Convert years before present (ybp) to date
-                                   method = c("dist_min", km2m(70))) # Ensure pseudo-absences are at least 150 km away
+                                   method = c("dist_min", km2m(70))) # Ensure pseudo-absences are at least 70 km away
 
 
 
@@ -123,7 +206,7 @@ apicalis2 <- sample_pseudoabs_time(apicalis %>%
 ggplot() +
   geom_spatraster(data = land_mask_current) +  # Add the land mask raster
   scale_fill_terrain_c() +  # Use a terrain color scale
-  geom_sf(data = apicalis2, aes(col = class))  # Plot Apicalis pseudo-absence and occurrence points, colored by class
+  geom_sf(data = apicalis3, aes(col = class))  # Plot Apicalis pseudo-absence and occurrence points, colored by class
 ```
 
 # Retrieve Climate Data for This Region
@@ -209,40 +292,6 @@ apicalis_ensemble <- simple_ensemble() %>%
 autoplot(apicalis_ensemble)  # Plot the ensemble model performance
 ```
 
- ```{r save_all_predictions_as_spatraster, message=FALSE, warning=FALSE}
-
-# Loop over 40 time steps (40ka in 1ka timesteps) to create and save a SpatRaster stack of predictions for each time step
-all_predictions <- vector("list", length = 41)  # Initialize list to store prediction rasters
-
-walk(760:800, function(timestep) {
-  year_bp <- time(climate_full[[1]])[timestep] - 1950  # Calculate years before present for each timestep
-
-  # Create a climate snapshot for the current timestep
-  climate_snapshot <- rast(list(climate_full[[1]][[timestep]], 
-                                climate_full[[2]][[timestep]], 
-                                climate_full[[3]][[timestep]]))
-  names(climate_snapshot) <- c("bio05", "bio06", "bio12")  # Rename layers to match the climate variables
-
-  # Predict species occurrence for the current climate snapshot
-  prediction_raster <- predict_raster(apicalis_ensemble, climate_snapshot)
-
-  # Store the prediction raster in the list
-  all_predictions[[timestep - 759]] <- prediction_raster  # Adjust the index to store rasters in the list correctly
-})
-
-# Combine all individual prediction rasters into a single SpatRaster stack
-all_predictions_stack <- rast(all_predictions)
-
-# Assign the SpatRaster stack to the R environment for further use
-all_predictions_raster <- all_predictions_stack
-
-# Save the stacked SpatRaster as a GeoTIFF (multilayer raster)
-output_file <- "C:/github/SNR_SDM/Results/all_time_steps_apicalis_model_40ka.tif"
-writeRaster(all_predictions_raster, filename = output_file, format = "GTiff", overwrite = TRUE)
-
-
-
-```
 
 
 # Make Predictions for the Last Glacial Maximum (LGM)
@@ -263,8 +312,9 @@ ggplot() +
   geom_spatraster(data = prediction_lgm, aes(fill = mean)) +  # Add the prediction raster to the plot
   scale_fill_terrain_c(name = "Probability\nof occurrence")  # Use a terrain color scale to show probabilities
 ```
-
+#######
 ```{r save_model_spatraster}
+
 # Initialize an empty SpatRaster stack
 apicalis_spatrast <- NULL
 
@@ -300,8 +350,145 @@ writeRaster(apicalis_spatrast, filename = output_file, overwrite = TRUE)
 ```
 
 
+```{r load midden data set}
+# Load the independent dataset
+dated_middens <- read.csv("C:/github/SNR_SDM/Data/processed/datedmiddens.csv")
 
-# Create a Stack of Predictions for All Time Steps
+# Convert to sf object (assuming it contains longitude and latitude columns)
+middens_sf <- dated_middens %>%
+  st_as_sf(coords = c("longitude", "latitude"), crs = 4326)  # Adjust column names if different
+
+# Reproject to match the CRS of the apicalis_spatrast
+middens_sf <- st_transform(middens_sf, crs = crs(apicalis_spatrast))
+
+# Convert sf object to SpatVector for compatibility with terra::extract
+middens_vect <- terra::vect(middens_sf)
+
+# Extract predicted values from the raster stack for presence locations
+extracted_values <- terra::extract(apicalis_spatrast, middens_vect)
+
+# Bind the extracted predicted values back to the original sf object
+middens_sf$predicted <- extracted_values[, 2]  # Assuming the second column contains predictions
+
+# Extract timesteps from the raster stack
+raster_timesteps <- time(apicalis_spatrast)
+
+# Round time_bp to the nearest raster timestep
+middens_sf <- middens_sf %>%
+  mutate(
+    binned_time_bp = sapply(time_bp, function(x) {
+      raster_timesteps[which.min(abs(raster_timesteps - x))]
+    })
+  )
+
+# Create a data frame with raster timesteps
+timesteps_df <- data.frame(
+  raster_timestep = raster_timesteps  # Timesteps from the raster
+)
+
+# Count occurrences per timestep
+organized_data <- timesteps_df %>%
+  left_join(
+    middens_sf %>%
+      group_by(binned_time_bp) %>%
+      summarise(
+        count = n(),                        # Number of occurrences
+        mean_value = mean(predicted, na.rm = TRUE)  # Mean predicted suitability (example)
+      ),
+    by = c("raster_timestep" = "binned_time_bp")
+  )
+
+# Replace NAs with 0 for counts (if no data in some bins)
+organized_data <- organized_data %>%
+  mutate(
+    count = replace_na(count, 0),
+    mean_value = replace_na(mean_value, NA)  # Leave NA for mean_value where no data exists
+  )
+
+# View the organized data
+print(organized_data)
+
+
+
+```
+
+```{r boyce index}
+
+library(ecospat)
+
+# Combine timesteps into broader intervals (e.g., 5,000-year bins)
+combined_timesteps <- organized_data %>%
+  mutate(combined_timestep = cut(
+    raster_timestep, 
+    breaks = seq(min(raster_timestep), max(raster_timestep), by = 5000),  # Define interval size
+    include.lowest = TRUE, 
+    labels = FALSE
+  ))
+
+# Summarize data by the combined timesteps
+combined_data <- combined_timesteps %>%
+  group_by(combined_timestep) %>%
+  summarise(
+    count = sum(count),  # Sum observations across timesteps
+    mean_value = mean(mean_value, na.rm = TRUE)  # Average predicted suitability values
+  ) %>%
+  filter(count > 0)  # Keep only bins with observations
+
+# Prepare observed suitability values for combined timesteps
+obs_combined <- combined_data$mean_value
+
+# Prepare raster-wide suitability values for combined timestep intervals
+# Extract relevant timesteps from raster
+combined_raster_timesteps <- unique(cut(
+  raster_timesteps, 
+  breaks = seq(min(raster_timesteps), max(raster_timesteps), by = 5000),
+  include.lowest = TRUE,
+  labels = FALSE
+))
+fit_combined <- terra::values(apicalis_spatrast[[which(raster_timesteps %in% raster_timesteps[combined_raster_timesteps])]])
+fit_combined <- na.omit(fit_combined)
+
+# ---- BOOTSTRAPPING ----
+
+# Number of bootstrap iterations
+n_boot <- 1000  # Adjust based on computational resources
+
+# Bootstrap procedure
+set.seed(123)  # Ensure reproducibility
+bootstrap_results <- replicate(n_boot, {
+  # Sample observed suitability values with replacement
+  sample_obs <- sample(obs_combined, replace = TRUE)
+  
+  # Recalculate the Boyce Index for the bootstrap sample
+  boyce <- ecospat.boyce(fit = fit_combined, obs = sample_obs, nclass = 25)
+  
+  # Return the Boyce Index correlation
+  boyce$cor
+})
+
+# Calculate summary statistics from bootstrapping
+mean_boyce <- mean(bootstrap_results)  # Mean Boyce Index
+sd_boyce <- sd(bootstrap_results)      # Standard deviation of the Boyce Index
+ci_lower <- quantile(bootstrap_results, 0.025)  # 95% CI lower bound
+ci_upper <- quantile(bootstrap_results, 0.975)  # 95% CI upper bound
+
+# Print bootstrapping results
+cat("\n--- Bootstrapped Boyce Index Results ---\n")
+cat("Mean Boyce Index:", mean_boyce, "\n")
+cat("Standard Deviation:", sd_boyce, "\n")
+cat("95% Confidence Interval:", ci_lower, "-", ci_upper, "\n")
+
+# Calculate the Boyce Index before bootstrapping
+initial_boyce <- ecospat.boyce(fit = fit_combined, obs = obs_combined, nclass = 25)
+
+# Print the initial Boyce Index before bootstrapping
+cat("\n--- Initial Boyce Index ---\n")
+cat("Boyce Index Correlation:", initial_boyce$cor, "\n")
+
+
+```
+
+#$ Create a Stack of Predictions for All Time Steps
 ```{r stack o maps}
 # Loop over 40 time steps (40ka in 1ka timesteps) to create and save a map of predictions for each time step
 walk(760:800, function(timestep) {
@@ -323,7 +510,7 @@ walk(760:800, function(timestep) {
     ggtitle(paste0("Krapp 70km apicalis Years BP: ", year_bp))  # Add a title with the year before present
 
   # Save the plot to a folder with filenames indicating the year BP
-  ggsave(filename = paste0("C:/github/SNR_SDM/Results/Apicalis Krapp model/apicalis Krapp Methods = 70km/apicalis_map_", 
+  ggsave(filename = paste0("C:/github/SNR_SDM/Results/Apicalis Krapp model/stratified-random sampling/70km/apicalis_map_", 
                          year_bp, " Krapp70km", ".png"),
        plot = p,
        width = 7, height = 7)
@@ -331,9 +518,9 @@ walk(760:800, function(timestep) {
 })
 ```
 
-# Partial Dependence Profiles and Variable Importance
+#$ Partial Dependence Profiles and Variable Importance
 ## PDP for bio12
-```{r PDP}
+ ```{r PDP}
 # Explain the ensemble model to generate partial dependence profiles and variable importance
 explainer_apicalis_ens <- explain_tidysdm(apicalis_ensemble)  # Create an explainer object for the ensemble model
 
@@ -344,23 +531,23 @@ plot(vip_ensemble)  # Plot the variable importance results
 # Generate a partial dependence profile for bio12
 pdp_bio12 <- model_profile(explainer_apicalis_ens, N = 500, variables = "bio12")  # Generate PDP for bio12
 plot(pdp_bio12)  # Plot the partial dependence profile for bio12
-```
 
-## PDP for bio05
-```{r PDP bio05}
+
+#$ PDP for bio05
+
 # Generate and plot a partial dependence profile for bio05
 pdp_bio05 <- model_profile(explainer_apicalis_ens, N = 500, variables = "bio05")
 plot(pdp_bio05)
-```
 
-## PDP for bio06
-```{r PDP bio06}
+
+#$ PDP for bio06
+ 
 # Generate and plot a partial dependence profile for bio06
 pdp_bio06 <- model_profile(explainer_apicalis_ens, N = 500, variables = "bio06")
 plot(pdp_bio06)
 ```
 
-```{r CLimate maps}
+ ```{r Climate variable maps}
 # Create a Stack of Maps for Each Climate Variable
 walk2(c("bio05", "bio06", "bio12"), 1:3, ~{
   var_name <- .x
@@ -391,4 +578,50 @@ walk2(c("bio05", "bio06", "bio12"), 1:3, ~{
   })
 })
 
+```
+
+ 
+
+ ```{r boyce_index}
+# Load necessary libraries
+library(dplyr)
+library(sf)
+library(terra)
+library(ecospat)  # For Boyce Index calculation
+
+# Load the independent dataset
+dated_middens <- read.csv("C:/github/SNR_SDM/Data/processed/datedmiddens.csv")
+
+# Convert to sf object (assuming it contains longitude and latitude columns)
+middens_sf <- dated_middens %>%
+  st_as_sf(coords = c("longitude", "latitude"), crs = 4326)  # Adjust column names if different
+
+# Reproject to match the CRS of the apicalis_spatrast
+middens_sf <- st_transform(middens_sf, crs = crs(apicalis_spatrast))
+
+# Extract predicted values from the raster stack for presence locations
+extracted_values <- extract(apicalis_spatrast, middens_sf)
+
+# Bind the extracted predicted values back to the original sf object
+middens_sf$predicted <- extracted_values[, 2]  # Assuming first column is ID, second is prediction
+
+# Filter dataset to include only relevant rows (non-NA predictions and valid times)
+valid_middens <- middens_sf %>%
+  filter(!is.na(predicted))
+
+# Ensure suitability values (predicted at presence locations) are numeric
+suitability_values <- na.omit(valid_middens$predicted)  # Predicted suitability for observed locations
+
+# Generate suitability values for the entire study area (all cells in raster)
+all_suitability_values <- values(apicalis_spatrast)  # Extract all raster values
+all_suitability_values <- na.omit(all_suitability_values)  # Remove NAs if present
+
+# Use ecospat.boyce to calculate Boyce Index
+boyce_index <- ecospat.boyce(
+  fit = all_suitability_values,  # Suitability predictions for all cells
+  obs = suitability_values       # Suitability values at observed presence locations
+)
+
+# View the Boyce Index
+print(boyce_index)
 ```
