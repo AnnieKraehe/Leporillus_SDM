@@ -113,7 +113,7 @@ climate_full <- pastclim::region_series(
 # Implement stratified-random sampling in environmental space as suggested by Steen et al. (2024)
 
 # Define the number of strata for each variable
-num_strata <- 5  # Number of strata (adjust as needed)
+num_strata <- 10  # Number of strata 
 
 # Extract specific layers for each climate variable (e.g., first layer for the current time)
 bio05 <- climate_full[[1]][[1]]  # First layer of bio05
