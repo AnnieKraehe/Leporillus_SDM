@@ -253,31 +253,58 @@ ggplot() +
 Let's make a whole stack of predictions and write the maps to a folder.
 
 ```{r stack o maps}
-# Make predictions for multiple time steps and save the maps to a specified folder
+ 
+ # Make predictions for multiple time steps and save the maps to a specified folder
+ walk(1:1046, function(timestep) {
+   # Extract the year before present (BP) by subtracting 2000 from the climate time index
+   year_bp <- flatten_int(time(climate_full))[timestep] - 2000
+ 
+   # Extract the climate data for the given timestep (bio05, bio06, bio12)
+   climate_snapshot <- rast(list(climate_full[[1]][[timestep]], 
+                                 climate_full[[2]][[timestep]], 
+                                 climate_full[[3]][[timestep]]))
+   names(climate_snapshot) <- c("bio05", "bio06", "bio12")  # Rename the layers to match the predictors
+
+   # Make predictions using the ensemble model for the current climate snapshot
+   prediction1 <- predict_raster(apicalis_ensemble, climate_snapshot)
+ 
+   # Plot the prediction using ggplot2, including a title with the corresponding year BP
+   p <- ggplot() +
+     geom_spatraster(data = prediction1, aes(fill = mean)) +
+     scale_fill_terrain_c(name = "Probability\nof occurrence") +
+     ggtitle(paste0("Paleoview model apicalis Years BP: ", year_bp))  # Add the title showing the year BP
+ 
+   # Save the plot as a PNG file in the specified folder, naming it according to the year BP
+   ggsave(path = "C:/github/SNR_SDM/Results/2apicalispaleoview",
+          plot = p,
+        filename = paste0("2apicalis_map_", year_bp, ".png"))
+ })
+ 
+```
+
+ ```{r}
+# Loop through time steps and save each prediction as a GeoTIFF
 walk(1:1046, function(timestep) {
-  # Extract the year before present (BP) by subtracting 2000 from the climate time index
   year_bp <- flatten_int(time(climate_full))[timestep] - 2000
 
-  # Extract the climate data for the given timestep (bio05, bio06, bio12)
+  # Extract the climate data for the current timestep
   climate_snapshot <- rast(list(climate_full[[1]][[timestep]], 
                                 climate_full[[2]][[timestep]], 
                                 climate_full[[3]][[timestep]]))
-  names(climate_snapshot) <- c("bio05", "bio06", "bio12")  # Rename the layers to match the predictors
+  names(climate_snapshot) <- c("bio05", "bio06", "bio12")
 
-  # Make predictions using the ensemble model for the current climate snapshot
+  # Make predictions for the current timestep
   prediction1 <- predict_raster(apicalis_ensemble, climate_snapshot)
 
-  # Plot the prediction using ggplot2, including a title with the corresponding year BP
-  p <- ggplot() +
-    geom_spatraster(data = prediction1, aes(fill = mean)) +
-    scale_fill_terrain_c(name = "Probability\nof occurrence") +
-    ggtitle(paste0("Paleoview model apicalis Years BP: ", year_bp))  # Add the title showing the year BP
-
-  # Save the plot as a PNG file in the specified folder, naming it according to the year BP
-  ggsave(path = "C:/github/SNR_SDM/Results/2apicalispaleoview",
-         plot = p,
-         filename = paste0("2apicalis_map_", year_bp, ".png"))
+  # Save the prediction as a GeoTIFF
+  output_path <- file.path("C:/github/SNR_SDM/Results/apicalispaleoview arch",
+                           paste0("2apicalis_map_", year_bp, ".tif"))
+  writeRaster(prediction1, filename = output_path, format = "GTiff", overwrite = TRUE)
 })
+
+
+
+
 ```
 # Create an explainer object for the ensemble model
 # This object will allow us to generate variable importance and partial dependence profiles
