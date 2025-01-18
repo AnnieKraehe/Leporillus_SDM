@@ -4,13 +4,52 @@ author: "Annie"
 date: "2024-06-20"
 output: html_document
 ---
+
 Using code written for paleoview
+
 ```{r setup, include=FALSE}
 # Set global chunk options to display code by default
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
 # Libraries
+
+```{r install_libraries, message=FALSE, warning=FALSE}
+
+# List of packages to check, install if needed, and load
+packages <- c(
+  "broom", "car", "DALEX", "dials", "dplyr", "ggplot2", "infer", 
+  "modeldata", "oz", "parsnip", "pastclim", "purrr", "readr", 
+  "recipes", "rsample", "rworldmap", "sf", "tidyr", "tidymodels", 
+  "tidysdm", "tidyterra", "tibble", "tune", "terra", "workflows", 
+  "workflowsets", "gtools", "fs"
+)
+
+# Function to display a cat message
+cat_message <- function(pkg, message_type) {
+  if (message_type == "installed") {
+    cat(paste0(pkg, " has been installed successfully!\n"))
+  } else if (message_type == "loading") {
+    cat(paste0(pkg, " is already installed and has been loaded!\n"))
+  }
+}
+
+# Install missing packages and load them
+for (pkg in packages) {
+  if (!requireNamespace(pkg, quietly = TRUE)) {
+    install.packages(pkg)
+    cat_message(pkg, "installed")
+  } else {
+    cat_message(pkg, "loading")
+  }
+  library(pkg, character.only = TRUE)
+}
+
+# If you are using renv, you can snapshot the renv after loading all the packages.
+
+# renv::snapshot()
+```
+
 ```{r libraries}
 # Load necessary libraries for data manipulation, spatial analysis, plotting, and modeling
 library(broom)
@@ -45,18 +84,21 @@ library(fs)
 ```
 
 # Set the working directory
+
 ```{r Set the working directory}
 # Set the working directory to the processed data folder
 knitr::opts_knit$set(root.dir =("C:/github/SNR_SDM/Data/processed"))
 ```
 
 # Download Krapp2021 dataset
+
 ```{r download climate}
 # Download the Krapp2021 dataset using pastclim package
 pastclim::download_dataset("Krapp2021")
 ```
 
 # Read Apicalis data
+
 ```{r read file}
 # Set working directory to the processed data folder
 setwd("C:/github/SNR_SDM/Data/processed")
@@ -69,12 +111,14 @@ apicalis <- read_csv("apicalis.csv") %>%
 ```
 
 # Create an extent for Australia
+
 ```{r}
 # Define an extent object for Australia using specific longitude (X) and latitude (Y) coordinates
 Aust_extent <- terra::ext(110, 152.5, -42.5, -7.5)
 ```
 
 # Krapp2021 Land Mask
+
 ```{r}
 # Create a land mask for the current time using the 'Krapp2021' dataset from the 'pastclim' package
 # This mask will restrict our area of interest to Australia
@@ -84,6 +128,7 @@ land_mask_current <- pastclim::get_land_mask(time_bp = 0, dataset = "Krapp2021")
 ```
 
 # Plot Apicalis Occurrence Data
+
 ```{r Plot the data using ggplot2}
 # Plot the Apicalis occurrence points with the current land mask using ggplot2
 ggplot() +
@@ -93,6 +138,7 @@ ggplot() +
 ```
 
 # Create Climate Time Series Using Krapp2021
+
 ```{r create climate time series}
 # Create a time series of palaeoclimate reconstructions using the 'Krapp2021' dataset
 # Variables used: bio05 (max temp), bio06 (min temp), bio12 (annual precipitation)
@@ -106,90 +152,10 @@ climate_full <- pastclim::region_series(
 
 ```
 
-# Sample Pseudo-Absences and Plot Apicalis Occurrence with Land Mask
+# sample pseudo absence in physical space
+ Sample Pseudo-Absences and Plot Apicalis Occurrence with Land Mask environmental space is less suitable for palaeo, because its easier to apply temporal depth to physical space stratification- lat, long, time
 
-```{r} 
-
-# Implement stratified-random sampling in environmental space as suggested by Steen et al. (2024)
-
-# Define the number of strata for each variable
-num_strata <- 10  # Number of strata 
-
-# Extract specific layers for each climate variable (e.g., first layer for the current time)
-bio05 <- climate_full[[1]][[1]]  # First layer of bio05
-bio06 <- climate_full[[2]][[1]]  # First layer of bio06
-bio12 <- climate_full[[3]][[1]]  # First layer of bio12
-
-# Combine environmental layers into a stack
-env_stack <- c(bio05, bio06, bio12)
-
-# Assign names to the layers
-names(env_stack) <- c("bio05", "bio06", "bio12")
-
-# Resample the land mask to match the resolution and extent of the environmental stack
-land_mask_resampled <- terra::resample(land_mask_current, env_stack, method = "near")  # Nearest neighbor interpolation
-
-# Define buffer distance for distance constraint
-buffer_distance <- 150000  # 150 km in meters
-
-# Generate pseudo-absences using stratified-random sampling
-set.seed(123)
-pseudo_absences <- sample_pseudoabs_time(
-  apicalis %>% filter(time_bp == -300),  # Filter presence points for time_bp == -300
-  n_per_presence = 3,  # Generate 3 pseudo-absences per presence point
-  raster = env_stack,  # Use the environmental stack as the reference raster
-  time_col = "time_bp",  # Specify the column for temporal filtering
-  lubridate_fun = pastclim::ybp2date,  # Convert years before present (ybp) to calendar years
-  method = c("dist_min", buffer_distance)  # Ensure pseudo-absences are at least 70 km away
-)
-
-# Ensure pseudo-absences are far from presences
-presence_buffer <- st_buffer(apicalis, dist = buffer_distance)  # Create presence buffer
-pseudo_absences_filtered <- pseudo_absences[!apply(st_intersects(pseudo_absences, presence_buffer, sparse = FALSE), 1, any), ]
-
-# Add time_step and class columns
-pseudo_absences_filtered <- pseudo_absences_filtered %>%
-  mutate(
-    time_bp = -300,  # Assign years before present
-    time_step = pastclim::ybp2date(time_bp),  # Convert to calendar years
-    class = "pseudoabs"  # Mark as pseudo-absence
-  )
-
-# Combine presences and pseudo-absences into a single dataset
-apicalis2 <- bind_rows(
-  apicalis %>% mutate(class = "presence", time_step = pastclim::ybp2date(-300)),
-  pseudo_absences_filtered
-)
-
-# Plot Apicalis occurrence and pseudo-absences with the resampled land mask
-ggplot() +
-  geom_spatraster(data = land_mask_resampled) +  # Plot resampled land mask
-  scale_fill_terrain_c() +
-  geom_sf(data = apicalis2, aes(color = class)) +
-  scale_color_manual(values = c("presence" = "blue", "pseudoabs" = "red")) +
-  theme_minimal() +
-  labs(title = "Stratified-Random Sampling in Environmental Space",
-       color = "Class")
-
-str(apicalis2)
-
-table(apicalis2$class)
-
-any(st_intersects(pseudo_absences_filtered, presence_buffer, sparse = FALSE))  # Should return FALSE
-
-# Align new apicalis2 structure with old structure
-apicalis2 <- apicalis2 %>%
-  select(class, time_step, geometry) %>%  # Keep only relevant columns
-  mutate(
-    class = factor(class, levels = c("presence", "pseudoabs"))  # Convert class to a factor
-  )
-
-# Validate structure
-str(apicalis2)
-table(apicalis2$class)
-
-```
- ```{r old pseudo absence chunk}
+```{r pseudo absence chunk (better)}
 # Sample pseudo-absences for Apicalis occurrence points between 300 and 90 years before present
 apicalis3 <- sample_pseudoabs_time(apicalis %>%
                                      filter(time_bp == -300),
@@ -210,6 +176,7 @@ ggplot() +
 ```
 
 # Retrieve Climate Data for This Region
+
 ```{r extract climate for region}
 # Convert Apicalis2 to a data frame and extract spatial coordinates (longitude, latitude)
 apicalis_df <- apicalis2 %>%
@@ -224,6 +191,7 @@ apicalis_df <- location_slice_from_region_series(apicalis_df,
 ```
 
 # Add Climate Reconstructions to the sf Object
+
 ```{r add climate to sf}
 # Add the climate reconstructions (bio05, bio06, bio12) to the Apicalis sf object and remove the time_step column
 apicalis4 <- apicalis2 %>%
@@ -233,6 +201,7 @@ apicalis4 <- apicalis2 %>%
 ```
 
 # Set Up a Recipe for Modeling
+
 ```{r make recipe}
 # Define a recipe for the model where 'class' is the outcome and other variables are predictors
 # Geometry is automatically ignored as a predictor for sf objects
@@ -241,6 +210,7 @@ apicalis_rec  # Check the recipe
 ```
 
 # Build a Workflow Set for Model Tuning
+
 ```{r specify models}
 # Create a workflow set of different models for tuning
 # We will use glm, gam, random forest, and boosted trees as our models
@@ -263,6 +233,7 @@ apicalis_models <- workflow_set(
 ```
 
 # Spatial Block Cross-Validation for Model Tuning
+
 ```{r set up cross validation}
 # Set up spatial block cross-validation with 5 folds for tuning and assessing models
 set.seed(1005)  # Set seed for reproducibility
@@ -271,6 +242,7 @@ autoplot(apicalis_cv)  # Plot the cross-validation folds
 ```
 
 # Tune and Assess Models
+
 ```{r tune models}
 # Use block cross-validation folds to tune and assess models
 set.seed(123)  # Set seed for reproducibility
@@ -283,6 +255,7 @@ apicalis_models <- apicalis_models %>%
 ```
 
 # Create an Ensemble Model
+
 ```{r ensemble}
 # Create an ensemble by selecting the best set of parameters for each model
 # The Boyce continuous index will be used as the metric for selecting the best random forest and boosted tree models
@@ -292,9 +265,8 @@ apicalis_ensemble <- simple_ensemble() %>%
 autoplot(apicalis_ensemble)  # Plot the ensemble model performance
 ```
 
-
-
 # Make Predictions for the Last Glacial Maximum (LGM)
+
 ```{r create LGM}
 # Create a climate raster for the Last Glacial Maximum (LGM) using the correct layer (21) for 20,000 BP
 climate_lgm <- rast(list(climate_full[[1]][[779]], climate_full[[2]][[779]], climate_full[[3]][[779]]))  # Extract 20,000 BP layers
@@ -302,7 +274,9 @@ names(climate_lgm) <- c("bio05", "bio06", "bio12")  # Rename the layers to match
 
 
 ```
+
 # Predict Using the Ensemble Model for LGM
+
 ```{r predict lgm}
 # Use the ensemble model to predict species occurrence probabilities for the Last Glacial Maximum (LGM)
 prediction_lgm <- predict_raster(apicalis_ensemble, climate_lgm)  # Predict LGM probabilities
@@ -312,7 +286,9 @@ ggplot() +
   geom_spatraster(data = prediction_lgm, aes(fill = mean)) +  # Add the prediction raster to the plot
   scale_fill_terrain_c(name = "Probability\nof occurrence")  # Use a terrain color scale to show probabilities
 ```
-#######
+
+####### 
+
 ```{r save_model_spatraster}
 
 # Initialize an empty SpatRaster stack
@@ -348,7 +324,6 @@ time(apicalis_spatrast) <- time(climate_full[[1]])[760:800] - 1950
 output_file <- "C:/github/SNR_SDM/Results/Apicalis Krapp model/predictions_stack.tif"
 writeRaster(apicalis_spatrast, filename = output_file, overwrite = TRUE)
 ```
-
 
 ```{r load midden data set}
 # Load the independent dataset
@@ -488,7 +463,8 @@ cat("Boyce Index Correlation:", initial_boyce$cor, "\n")
 
 ```
 
-#$ Create a Stack of Predictions for All Time Steps
+#\$ Create a Stack of Predictions for All Time Steps
+
 ```{r stack o maps}
 # Loop over 40 time steps (40ka in 1ka timesteps) to create and save a map of predictions for each time step
 walk(760:800, function(timestep) {
@@ -518,9 +494,9 @@ walk(760:800, function(timestep) {
 })
 ```
 
-#$ Partial Dependence Profiles and Variable Importance
-## PDP for bio12
- ```{r PDP}
+#\$ Partial Dependence Profiles and Variable Importance \## PDP for bio12
+
+```{r PDP}
 # Explain the ensemble model to generate partial dependence profiles and variable importance
 explainer_apicalis_ens <- explain_tidysdm(apicalis_ensemble)  # Create an explainer object for the ensemble model
 
@@ -547,7 +523,7 @@ pdp_bio06 <- model_profile(explainer_apicalis_ens, N = 500, variables = "bio06")
 plot(pdp_bio06)
 ```
 
- ```{r Climate variable maps}
+```{r Climate variable maps}
 # Create a Stack of Maps for Each Climate Variable
 walk2(c("bio05", "bio06", "bio12"), 1:3, ~{
   var_name <- .x
@@ -580,9 +556,7 @@ walk2(c("bio05", "bio06", "bio12"), 1:3, ~{
 
 ```
 
- 
-
- ```{r boyce_index}
+```{r boyce_index}
 # Load necessary libraries
 library(dplyr)
 library(sf)
