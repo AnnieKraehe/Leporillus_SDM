@@ -56,7 +56,6 @@ library(broom)
 library(car)
 library(DALEX)
 library(dials)
-library(dplyr)
 library(ggplot2)
 library(infer)
 library(modeldata)
@@ -80,7 +79,7 @@ library(workflows)
 library(workflowsets)
 library(gtools)
 library(fs)
-
+library(dplyr)
 ```
 
 # Set the working directory
@@ -152,6 +151,17 @@ climate_full <- pastclim::region_series(
 
 ```
 
+#Spatial Filtering
+this is a place holder, I haven't checked it or run it yet
+```{r spatial filtering}
+set.seed(123)
+apicalis <- thin_by_dist(apicalis,
+  dist_min = km2m(50),
+
+)
+nrow(apicalis)
+```
+
 # sample pseudo absence in physical space
  Sample Pseudo-Absences and Plot Apicalis Occurrence with Land Mask environmental space is less suitable for palaeo, because its easier to apply temporal depth to physical space stratification- lat, long, time
 
@@ -178,12 +188,12 @@ ggplot() +
 # Retrieve Climate Data for This Region
 
 ```{r extract climate for region}
-# Convert Apicalis2 to a data frame and extract spatial coordinates (longitude, latitude)
-apicalis_df <- apicalis2 %>%
-  dplyr::bind_cols(sf::st_coordinates(apicalis2)) %>%  # Bind spatial coordinates to the data
+# Convert apicalis to a data frame and extract spatial coordinates (longitude, latitude)
+apicalis_df <- apicalis3 %>%
+  dplyr::bind_cols(sf::st_coordinates(apicalis3)) %>%  # Bind spatial coordinates to the data
   mutate(time_bp = date2ybp(time_step)) %>%  # Convert time_step to years before present
   as.data.frame() %>%  # Convert to a data frame
-  select(-geometry)  # Remove geometry column
+  dplyr::select(-geometry)  # Remove geometry column
 
 # Retrieve climate data for the Apicalis occurrence points from the climate series
 apicalis_df <- location_slice_from_region_series(apicalis_df,
@@ -194,9 +204,9 @@ apicalis_df <- location_slice_from_region_series(apicalis_df,
 
 ```{r add climate to sf}
 # Add the climate reconstructions (bio05, bio06, bio12) to the Apicalis sf object and remove the time_step column
-apicalis4 <- apicalis2 %>%
+apicalis4 <- apicalis3 %>%
   bind_cols(apicalis_df[, c("bio05", "bio06", "bio12")]) %>%  # Bind the climate data to the sf object
-  select(-time_step) %>%  # Remove time_step column as it’s not needed for modeling
+  # dplyr::select(-time_step) %>%  # Remove time_step column as it’s not needed for modeling
   filter(!is.na(.$bio05))  # Filter out any rows where bio05 is missing
 ```
 
@@ -205,7 +215,7 @@ apicalis4 <- apicalis2 %>%
 ```{r make recipe}
 # Define a recipe for the model where 'class' is the outcome and other variables are predictors
 # Geometry is automatically ignored as a predictor for sf objects
-apicalis_rec <- recipe(apicalis4, formula = class ~ .)  # Define the model formula
+apicalis_rec <- recipe(apicalis4, formula = class ~ bio05 + bio06 + bio12)  # Define the model formula
 apicalis_rec  # Check the recipe
 ```
 
@@ -227,7 +237,7 @@ apicalis_models <- workflow_set(
   # Update the workflow model for GAMs with a formula specifying smooth terms for continuous predictors
   update_workflow_model("default_gam",
                         spec = sdm_spec_gam(),
-                        formula = gam_formula(apicalis_rec)) %>%
+                        formula = class ~ s(bio05, k = 10) + s(bio06, k = 10) + s(bio12, k = 10)) %>%
   # Adjust controls to store information needed for the ensemble model
   option_add(control = control_ensemble_grid())
 ```
@@ -353,7 +363,8 @@ middens_sf <- middens_sf %>%
   mutate(
     binned_time_bp = sapply(time_bp, function(x) {
       raster_timesteps[which.min(abs(raster_timesteps - x))]
-    })
+    }),
+    lubridate_time = ybp2date(time_bp)
   )
 
 # Create a data frame with raster timesteps
@@ -386,6 +397,31 @@ print(organized_data)
 
 
 ```
+
+
+```{r true skills statistic}
+# previous output is a continuous suitability gradient. for TSS to work we need to define suitability binary, so an area is classed as either suitable or unsuitable. to do this we need to define a threshold - above which is suitable and below is unsuitable. 50% is standard.
+
+threshold <- 0.5 # we are defining the binary suitability threshold at 50%. 
+
+apicalis_binary <- app(x = apicalis_spatrast, fun = \(i) i > threshold) #making the binary
+
+time(apicalis_binary) <- time(apicalis_spatrast)
+apicalis_rs <- sds(apicalis_binary)
+names(apicalis_rs) <- "pres_abs"  
+pseudoabs <- sample_pseudoabs_time(
+  data = middens_sf,
+  raster = apicalis_rs,
+  n_per_presence = 3, # 3 is standard absence per presence
+  time_col = "lubridate_time",
+  method = c("dist_min", km2m(70))
+)
+location_slice_from_region_series(
+  x = pseudoabs,
+  
+)
+```
+
 
 ```{r boyce index}
 
