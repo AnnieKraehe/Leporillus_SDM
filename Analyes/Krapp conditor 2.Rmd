@@ -1,5 +1,5 @@
 ---
-title: "Krapp apicalis"
+title: "Krapp conditor"
 author: "Annie"
 date: "2024-06-20"
 output: html_document
@@ -96,14 +96,14 @@ knitr::opts_knit$set(root.dir =("C:/github/SNR_SDM/Data/processed"))
 pastclim::download_dataset("Krapp2021")
 ```
 
-# Read Apicalis data
+# Read conditor data
 
 ```{r read file}
 # Set working directory to the processed data folder
 setwd("C:/github/SNR_SDM/Data/processed")
 
-# Read in the 'apicalis.csv' file, print its contents, convert to an sf object, and set the CRS
-apicalis <- read_csv("apicalis.csv") %>%
+# Read in the 'conditor.csv' file, print its contents, convert to an sf object, and set the CRS
+conditor <- read_csv("conditor.csv") %>%
   {print(.); .} %>%  # Print the data to check its contents
   st_as_sf(coords = c("longitude", "latitude")) %>%  # Convert to a simple features (sf) object using latitude and longitude
   st_set_crs(4326)  # Set the Coordinate Reference System (CRS) to EPSG:4326 (GDA2020)
@@ -126,14 +126,14 @@ land_mask_current <- pastclim::get_land_mask(time_bp = 0, dataset = "Krapp2021")
   aggregate(fact = 5, fun = "mean", na.rm = TRUE)  # Aggregate for better resolution (factor of 5), removing NAs
 ```
 
-# Plot Apicalis Occurrence Data
+# Plot conditor Occurrence Data
 
 ```{r Plot the data using ggplot2}
-# Plot the Apicalis occurrence points with the current land mask using ggplot2
+# Plot the conditor occurrence points with the current land mask using ggplot2
 ggplot() +
   geom_spatraster(data = land_mask_current, aes()) +  # Add the land mask as a spatial raster layer
   scale_fill_terrain_c() +  # Use a terrain color scale for the land mask
-  geom_sf(data = apicalis, aes(col = time_bp))  # Plot Apicalis occurrence points, colored by time_bp
+  geom_sf(data = conditor, aes(col = time_bp))  # Plot conditor occurrence points, colored by time_bp
 ```
 
 # Create Climate Time Series Using Krapp2021
@@ -155,19 +155,19 @@ climate_full <- pastclim::region_series(
 this is a place holder, I haven't checked it or run it yet
 ```{r spatial filtering}
 set.seed(123)
-apicalis <- thin_by_dist(apicalis,
+conditor <- thin_by_dist(conditor,
   dist_min = km2m(50),
 
 )
-nrow(apicalis)
+nrow(conditor)
 ```
 
 # sample pseudo absence in physical space
- Sample Pseudo-Absences and Plot Apicalis Occurrence with Land Mask environmental space is less suitable for palaeo, because its easier to apply temporal depth to physical space stratification- lat, long, time
+ Sample Pseudo-Absences and Plot conditor Occurrence with Land Mask environmental space is less suitable for palaeo, because its easier to apply temporal depth to physical space stratification- lat, long, time
 
 ```{r pseudo absence chunk (better)}
-# Sample pseudo-absences for Apicalis occurrence points between 300 and 90 years before present
-apicalis3 <- sample_pseudoabs_time(apicalis %>%
+# Sample pseudo-absences for conditor occurrence points between 300 and 90 years before present
+conditor3 <- sample_pseudoabs_time(conditor %>%
                                      filter(time_bp == -300),
                                    n_per_presence = 3, # Generate 3 pseudo-absences per presence point
                                    raster = climate_full[[1]], # Use the first layer of climate data as the reference raster
@@ -178,34 +178,34 @@ apicalis3 <- sample_pseudoabs_time(apicalis %>%
 
 
 
-# Plot Apicalis occurrence with the current land mask
+# Plot conditor occurrence with the current land mask
 ggplot() +
   geom_spatraster(data = land_mask_current) +  # Add the land mask raster
   scale_fill_terrain_c() +  # Use a terrain color scale
-  geom_sf(data = apicalis3, aes(col = class))  # Plot Apicalis pseudo-absence and occurrence points, colored by class
+  geom_sf(data = conditor3, aes(col = class))  # Plot conditor pseudo-absence and occurrence points, colored by class
 ```
 
 # Retrieve Climate Data for This Region
 
 ```{r extract climate for region}
-# Convert apicalis to a data frame and extract spatial coordinates (longitude, latitude)
-apicalis_df <- apicalis3 %>%
-  dplyr::bind_cols(sf::st_coordinates(apicalis3)) %>%  # Bind spatial coordinates to the data
+# Convert conditor to a data frame and extract spatial coordinates (longitude, latitude)
+conditor_df <- conditor3 %>%
+  dplyr::bind_cols(sf::st_coordinates(conditor3)) %>%  # Bind spatial coordinates to the data
   mutate(time_bp = date2ybp(time_step)) %>%  # Convert time_step to years before present
   as.data.frame() %>%  # Convert to a data frame
   dplyr::select(-geometry)  # Remove geometry column
 
-# Retrieve climate data for the Apicalis occurrence points from the climate series
-apicalis_df <- location_slice_from_region_series(apicalis_df,
+# Retrieve climate data for the conditor occurrence points from the climate series
+conditor_df <- location_slice_from_region_series(conditor_df,
                                                  region_series = climate_full)  # Use the full climate series for extraction
 ```
 
 # Add Climate Reconstructions to the sf Object
 
 ```{r add climate to sf}
-# Add the climate reconstructions (bio05, bio06, bio12) to the Apicalis sf object and remove the time_step column
-apicalis4 <- apicalis3 %>%
-  bind_cols(apicalis_df[, c("bio05", "bio06", "bio12")]) %>%  # Bind the climate data to the sf object
+# Add the climate reconstructions (bio05, bio06, bio12) to the conditor sf object and remove the time_step column
+conditor4 <- conditor3 %>%
+  bind_cols(conditor_df[, c("bio05", "bio06", "bio12")]) %>%  # Bind the climate data to the sf object
   # dplyr::select(-time_step) %>%  # Remove time_step column as it’s not needed for modeling
   filter(!is.na(.$bio05))  # Filter out any rows where bio05 is missing
 ```
@@ -215,8 +215,8 @@ apicalis4 <- apicalis3 %>%
 ```{r make recipe}
 # Define a recipe for the model where 'class' is the outcome and other variables are predictors
 # Geometry is automatically ignored as a predictor for sf objects
-apicalis_rec <- recipe(apicalis4, formula = class ~ bio05 + bio06 + bio12)  # Define the model formula
-apicalis_rec  # Check the recipe
+conditor_rec <- recipe(conditor4, formula = class ~ bio05 + bio06 + bio12)  # Define the model formula
+conditor_rec  # Check the recipe
 ```
 
 # Build a Workflow Set for Model Tuning
@@ -224,8 +224,8 @@ apicalis_rec  # Check the recipe
 ```{r specify models}
 # Create a workflow set of different models for tuning
 # We will use glm, gam, random forest, and boosted trees as our models
-apicalis_models <- workflow_set(
-  preproc = list(default = apicalis_rec),  # Use the recipe for preprocessing
+conditor_models <- workflow_set(
+  preproc = list(default = conditor_rec),  # Use the recipe for preprocessing
   models = list(
     glm = sdm_spec_glm(),  # Generalized Linear Model
     gam = sdm_spec_gam(),  # Generalized Additive Model
@@ -247,8 +247,8 @@ apicalis_models <- workflow_set(
 ```{r set up cross validation}
 # Set up spatial block cross-validation with 5 folds for tuning and assessing models
 set.seed(1005)  # Set seed for reproducibility
-apicalis_cv <- spatial_block_cv(apicalis4, v = 5)  # Create spatial block cross-validation with 5 folds
-autoplot(apicalis_cv)  # Plot the cross-validation folds
+conditor_cv <- spatial_block_cv(conditor4, v = 5)  # Create spatial block cross-validation with 5 folds
+autoplot(conditor_cv)  # Plot the cross-validation folds
 ```
 
 # Tune and Assess Models
@@ -256,9 +256,9 @@ autoplot(apicalis_cv)  # Plot the cross-validation folds
 ```{r tune models}
 # Use block cross-validation folds to tune and assess models
 set.seed(123)  # Set seed for reproducibility
-apicalis_models <- apicalis_models %>%
+conditor_models <- conditor_models %>%
   workflow_map("tune_grid",  # Tune hyperparameters using grid search
-               resamples = apicalis_cv,  # Use the cross-validation resamples
+               resamples = conditor_cv,  # Use the cross-validation resamples
                grid = 5,  # Use a grid size of 5 for tuning
                metrics = sdm_metric_set(),  # Use the default set of SDM metrics
                verbose = TRUE)  # Print verbose output
@@ -269,10 +269,10 @@ apicalis_models <- apicalis_models %>%
 ```{r ensemble}
 # Create an ensemble by selecting the best set of parameters for each model
 # The Boyce continuous index will be used as the metric for selecting the best random forest and boosted tree models
-apicalis_ensemble <- simple_ensemble() %>%
-  add_member(apicalis_models, metric = "boyce_cont")  # Add members to the ensemble using Boyce index as the metric
+conditor_ensemble <- simple_ensemble() %>%
+  add_member(conditor_models, metric = "boyce_cont")  # Add members to the ensemble using Boyce index as the metric
 
-autoplot(apicalis_ensemble)  # Plot the ensemble model performance
+autoplot(conditor_ensemble)  # Plot the ensemble model performance
 ```
 
 # Make Predictions for the Last Glacial Maximum (LGM)
@@ -289,7 +289,7 @@ names(climate_lgm) <- c("bio05", "bio06", "bio12")  # Rename the layers to match
 
 ```{r predict lgm}
 # Use the ensemble model to predict species occurrence probabilities for the Last Glacial Maximum (LGM)
-prediction_lgm <- predict_raster(apicalis_ensemble, climate_lgm)  # Predict LGM probabilities
+prediction_lgm <- predict_raster(conditor_ensemble, climate_lgm)  # Predict LGM probabilities
 
 # Plot the predicted probabilities using ggplot2
 ggplot() +
@@ -302,7 +302,7 @@ ggplot() +
 ```{r save_model_spatraster}
 
 # Initialize an empty SpatRaster stack
-apicalis_spatrast <- NULL
+conditor_spatrast <- NULL
 
 # Loop through 40 time steps (40ka in 1ka timesteps) to create and stack rasters
 walk(760:800, function(timestep) {
@@ -317,22 +317,22 @@ walk(760:800, function(timestep) {
   names(climate_snapshot) <- c("bio05", "bio06", "bio12")  # Rename layers to match the climate variables
 
   # Predict species occurrence for the current climate snapshot
-  prediction_raster <- predict_raster(apicalis_ensemble, climate_snapshot)
+  prediction_raster <- predict_raster(conditor_ensemble, climate_snapshot)
   
   # Stack the prediction raster along the z-axis
-  apicalis_spatrast <<- if (is.null(apicalis_spatrast)) {
+  conditor_spatrast <<- if (is.null(conditor_spatrast)) {
     prediction_raster
   } else {
-    c(apicalis_spatrast, prediction_raster)
+    c(conditor_spatrast, prediction_raster)
   }
 })
 
 # Assign time steps to the z-axis of the stacked raster
-time(apicalis_spatrast) <- time(climate_full[[1]])[760:800] - 1950
+time(conditor_spatrast) <- time(climate_full[[1]])[760:800] - 1950
 
 # Save the stacked SpatRaster to a file
-output_file <- "C:/github/SNR_SDM/Results/Apicalis Krapp model/predictions_stack.tif"
-writeRaster(apicalis_spatrast, filename = output_file, overwrite = TRUE)
+output_file <- "C:/github/SNR_SDM/Results/conditor Krapp model/predictions_stack.tif"
+writeRaster(conditor_spatrast, filename = output_file, overwrite = TRUE)
 ```
 
 ```{r load midden data set}
@@ -343,20 +343,20 @@ dated_middens <- read.csv("C:/github/SNR_SDM/Data/processed/datedmiddens.csv")
 middens_sf <- dated_middens %>%
   st_as_sf(coords = c("longitude", "latitude"), crs = 4326)  # Adjust column names if different
 
-# Reproject to match the CRS of the apicalis_spatrast
-middens_sf <- st_transform(middens_sf, crs = crs(apicalis_spatrast))
+# Reproject to match the CRS of the conditor_spatrast
+middens_sf <- st_transform(middens_sf, crs = crs(conditor_spatrast))
 
 # Convert sf object to SpatVector for compatibility with terra::extract
 middens_vect <- terra::vect(middens_sf)
 
 # Extract predicted values from the raster stack for presence locations
-extracted_values <- terra::extract(apicalis_spatrast, middens_vect)
+extracted_values <- terra::extract(conditor_spatrast, middens_vect)
 
 # Bind the extracted predicted values back to the original sf object
 middens_sf$predicted <- extracted_values[, 2]  # Assuming the second column contains predictions
 
 # Extract timesteps from the raster stack
-raster_timesteps <- time(apicalis_spatrast)
+raster_timesteps <- time(conditor_spatrast)
 
 # Round time_bp to the nearest raster timestep
 middens_sf <- middens_sf %>%
@@ -404,21 +404,21 @@ print(organized_data)
 
 threshold <- 0.5 # we are defining the binary suitability threshold at 50%. 
 
-apicalis_binary <- app(x = apicalis_spatrast, fun = \(i) i > threshold) #making the binary
+conditor_binary <- app(x = conditor_spatrast, fun = \(i) i > threshold) #making the binary
 
-time(apicalis_binary) <- time(apicalis_spatrast) |> pastclim::ybp2date()
-apicalis_rs <- sds(apicalis_binary)
-names(apicalis_rs) <- "pres_abs"  
+time(conditor_binary) <- time(conditor_spatrast) |> pastclim::ybp2date()
+conditor_rs <- sds(conditor_binary)
+names(conditor_rs) <- "pres_abs"  
 pseudoabs <- sample_pseudoabs_time(
   data = dated_middens,
-  raster = apicalis_rs,
+  raster = conditor_rs,
   n_per_presence = 3, # 3 is standard absence per presence
   time_col = "time_bp",
   lubridate_fun = pastclim::ybp2date,
   method = c("dist_min", km2m(200)),
   time_buffer = 3650000/2
 ) 
-# Plot the pseudo abcense + presence points with the current land mask using ggplot2
+# Plot the pseudo absence + presence points with the current land mask using ggplot2
 ggplot() +
   geom_spatraster(data = land_mask_current, aes()) +  # Add the land mask as a spatial raster layer
   scale_fill_terrain_c() +  # Use a terrain color scale for the land mask
@@ -431,7 +431,7 @@ pres_abs_observed <- pseudoabs |> mutate(time_bp = date2ybp(time_step)) |>
 #location_slice_from_region_series comes from function on my computer, not from package
 pres_abs_pred <- location_slice_from_region_series(
   x = pres_abs_observed,
-  region_series = apicalis_rs
+  region_series = conditor_rs
 )
 pres_abs_pred$class <- pseudoabs$class
 # Confusion matrix
@@ -480,7 +480,7 @@ combined_raster_timesteps <- unique(cut(
   include.lowest = TRUE,
   labels = FALSE
 ))
-fit_combined <- terra::values(apicalis_spatrast[[which(raster_timesteps %in% raster_timesteps[combined_raster_timesteps])]])
+fit_combined <- terra::values(conditor_spatrast[[which(raster_timesteps %in% raster_timesteps[combined_raster_timesteps])]])
 fit_combined <- na.omit(fit_combined)
 
 # ---- BOOTSTRAPPING ----
@@ -537,16 +537,16 @@ walk(760:800, function(timestep) {
   names(climate_snapshot) <- c("bio05", "bio06", "bio12")  # Rename layers to match the climate variables
 
   # Predict species occurrence for the current climate snapshot
-  prediction1 <- predict_raster(apicalis_ensemble, climate_snapshot)
+  prediction1 <- predict_raster(conditor_ensemble, climate_snapshot)
 
   # Plot the predictions using ggplot2
   p <- ggplot() +
     geom_spatraster(data = prediction1, aes(fill = mean)) +  # Add the prediction raster
     scale_fill_terrain_c(name = "Probability\nof occurrence") +  # Use a terrain color scale
-    ggtitle(paste0("Krapp 70km apicalis Years BP: ", year_bp))  # Add a title with the year before present
+    ggtitle(paste0("Krapp 70km conditor Years BP: ", year_bp))  # Add a title with the year before present
 
   # Save the plot to a folder with filenames indicating the year BP
-  ggsave(filename = paste0("C:/github/SNR_SDM/Results/Apicalis Krapp model/stratified-random sampling/70km/apicalis_map_", 
+  ggsave(filename = paste0("C:/github/SNR_SDM/Results/conditor Krapp model/stratified-random sampling/70km/conditor_map_", 
                          year_bp, " Krapp70km", ".png"),
        plot = p,
        width = 7, height = 7)
@@ -558,28 +558,28 @@ walk(760:800, function(timestep) {
 
 ```{r PDP}
 # Explain the ensemble model to generate partial dependence profiles and variable importance
-explainer_apicalis_ens <- explain_tidysdm(apicalis_ensemble)  # Create an explainer object for the ensemble model
+explainer_conditor_ens <- explain_tidysdm(conditor_ensemble)  # Create an explainer object for the ensemble model
 
 # Compute variable importance using the DALEX package
-vip_ensemble <- model_parts(explainer = explainer_apicalis_ens)  # Calculate variable importance
+vip_ensemble <- model_parts(explainer = explainer_conditor_ens)  # Calculate variable importance
 plot(vip_ensemble)  # Plot the variable importance results
 
 # Generate a partial dependence profile for bio12
-pdp_bio12 <- model_profile(explainer_apicalis_ens, N = 500, variables = "bio12")  # Generate PDP for bio12
+pdp_bio12 <- model_profile(explainer_conditor_ens, N = 500, variables = "bio12")  # Generate PDP for bio12
 plot(pdp_bio12)  # Plot the partial dependence profile for bio12
 
 
 #$ PDP for bio05
 
 # Generate and plot a partial dependence profile for bio05
-pdp_bio05 <- model_profile(explainer_apicalis_ens, N = 500, variables = "bio05")
+pdp_bio05 <- model_profile(explainer_conditor_ens, N = 500, variables = "bio05")
 plot(pdp_bio05)
 
 
 #$ PDP for bio06
  
 # Generate and plot a partial dependence profile for bio06
-pdp_bio06 <- model_profile(explainer_apicalis_ens, N = 500, variables = "bio06")
+pdp_bio06 <- model_profile(explainer_conditor_ens, N = 500, variables = "bio06")
 plot(pdp_bio06)
 ```
 
@@ -630,11 +630,11 @@ dated_middens <- read.csv("C:/github/SNR_SDM/Data/processed/datedmiddens.csv")
 middens_sf <- dated_middens %>%
   st_as_sf(coords = c("longitude", "latitude"), crs = 4326)  # Adjust column names if different
 
-# Reproject to match the CRS of the apicalis_spatrast
-middens_sf <- st_transform(middens_sf, crs = crs(apicalis_spatrast))
+# Reproject to match the CRS of the conditor_spatrast
+middens_sf <- st_transform(middens_sf, crs = crs(conditor_spatrast))
 
 # Extract predicted values from the raster stack for presence locations
-extracted_values <- extract(apicalis_spatrast, middens_sf)
+extracted_values <- extract(conditor_spatrast, middens_sf)
 
 # Bind the extracted predicted values back to the original sf object
 middens_sf$predicted <- extracted_values[, 2]  # Assuming first column is ID, second is prediction
@@ -647,7 +647,7 @@ valid_middens <- middens_sf %>%
 suitability_values <- na.omit(valid_middens$predicted)  # Predicted suitability for observed locations
 
 # Generate suitability values for the entire study area (all cells in raster)
-all_suitability_values <- values(apicalis_spatrast)  # Extract all raster values
+all_suitability_values <- values(conditor_spatrast)  # Extract all raster values
 all_suitability_values <- na.omit(all_suitability_values)  # Remove NAs if present
 
 # Use ecospat.boyce to calculate Boyce Index
