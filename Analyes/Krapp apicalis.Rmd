@@ -280,6 +280,31 @@ apicalis_models <- apicalis_models %>%
                metrics = sdm_metric_set(),  # Use the default set of SDM metrics
                verbose = TRUE)  # Print verbose output
 ```
+```{r }
+
+
+
+#extract value for tss_max
+tss_results <- collect_metrics(apicalis_models) %>% filter(.metric == "tss_max")
+
+
+# Extract full ROC curves with sensitivity and specificity for each model
+roc_results <- collect_predictions(apicalis_models) %>%
+  group_by(wflow_id, .config, model) %>%
+  roc_curve(truth = class, .pred_presence) %>%  # Use .pred_presence as probability estimates
+  mutate(TSS = sensitivity + specificity - 1)
+
+# Extract TSS-max threshold
+tss_thresholds <- roc_results %>%
+  group_by(wflow_id, model) %>%
+  slice_max(TSS) %>%  # Select the row where TSS is highest
+  select(wflow_id, model, .threshold, TSS)  # Use .threshold instead of threshold
+
+# Print results
+print(tss_thresholds)
+
+
+```
 
 ## Create an Ensemble Model
 
@@ -699,7 +724,7 @@ pseudoabs <- sample_pseudoabs_time(
   method = c("dist_min", km2m(200)),
   time_buffer = 365000 * 2
 )
-
+ 
 # Plot the pseudo-absence + presence points with the current land mask.
 ggplot() +
   geom_spatraster(data = land_mask_current, aes()) +
@@ -746,7 +771,7 @@ print(paste0("F2 score: ", f2score))
 
 ```{r true skills statistic using midden data ORIGINAL}
 
-threshold <- 0.5 # we are defining the binary suitability threshold at 50%. 
+threshold <- 0.29 # we are defining the binary suitability threshold at 50%. 
 
 apicalis_binary <- app(x = apicalis_spatrast, fun = \(i) i > threshold) #making the binary
 
