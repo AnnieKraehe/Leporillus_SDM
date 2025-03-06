@@ -10,10 +10,10 @@ output:
 
 Using code written for paleoview
 
-```{r setup, include=FALSE}
+#```{r setup, include=FALSE}
 # Set global chunk options to display code by default
-knitr::opts_chunk$set(echo = TRUE)
-```
+#knitr::opts_chunk$set(echo = TRUE)
+#```
 
 # Libraries
 
@@ -25,7 +25,7 @@ packages <- c(
   "modeldata", "oz", "parsnip", "pastclim", "purrr", "readr", 
   "recipes", "rsample", "rworldmap", "sf", "tidyr", "tidymodels", 
   "tidysdm", "tidyterra", "tibble", "tune", "terra", "workflows", 
-  "workflowsets", "gtools", "fs"
+  "workflowsets", "gtools", "fs", "USE"
 )
 
 # Function to display a cat message
@@ -42,9 +42,11 @@ for (pkg in packages) {
   if (!requireNamespace(pkg, quietly = TRUE)) {
     if (pkg == "pastclim") {
       devtools::install_local("C:/github/pastclim")
+    } else if (pkg == "USE") {
+      devtools::install_github("danddr/USE")
     } else {
-      install.packages(pkg)
-    }
+        install.packages(pkg)
+      }
     
     cat_message(pkg, "installed")
   } else {
@@ -88,6 +90,7 @@ library(workflowsets)
 library(gtools)
 library(fs)
 library(dplyr)
+library(USE)
 ```
 
 # Set the working directory
@@ -182,31 +185,44 @@ Stratified sampling in in physical space. Environmental space is less suitable f
 
 ```{r pseudo absence }
 # Sample pseudo-absences for Apicalis occurrence points between 300 and 90 years before present
-apicalis3 <- sample_pseudoabs_time(apicalis %>%
-                                     filter(time_bp == -300),
-                                   n_per_presence = 3, # Generate 3 pseudo-absences per presence point
-                                   raster = climate_full[[1]], # Use the first layer of climate data as the reference raster
-                                   time_col = "time_bp", # Specify the time column
-                                   lubridate_fun = pastclim::ybp2date, # Convert years before present (ybp) to date
-                                   method = c("dist_min", km2m(70))) # Ensure pseudo-absences are at least 70 km away
+# apicalis3 <- sample_pseudoabs_time(apicalis %>%
+#                                      filter(time_bp == -300),
+#                                    n_per_presence = 3, # Generate 3 pseudo-absences per presence point
+#                                    raster = climate_full[[1]], # Use the first layer of climate data as the reference raster
+#                                    time_col = "time_bp", # Specify the time column
+#                                    lubridate_fun = pastclim::ybp2date, # Convert years before present (ybp) to date
+#                                    method = c("dist_min", km2m(70))) # Ensure pseudo-absences are at least 70 km away
 
+env_space_1950 <- c(climate_full[[1]][[800]], climate_full[[2]][[800]],
+                    climate_full[[3]][[800]])
 
-
+apicalis3 <- paSampling(
+  env.rast = env_space_1950,
+  pres = apicalis %>% filter(time_bp == -300),
+  thres = 0.5, # you can tune this
+  n.tr = 3,
+  grid.res = 5 # you can tune this
+) |> st_drop_geometry()
 
 # Plot Apicalis occurrence with the current land mask
 ggplot() +
   geom_spatraster(data = land_mask_current) +  # Add the land mask raster
   scale_fill_terrain_c() +  # Use a terrain color scale
-  geom_sf(data = apicalis3, aes(col = class))  # Plot Apicalis pseudo-absence and occurrence points, colored by class
+  geom_point(data = apicalis3, aes(x, y), col = "blue") +
+  geom_sf(data = apicalis |> filter(time_bp == -300),
+             col = "red") # Plot Apicalis pseudo-absence and occurrence points, colored by class
 ```
 
 ## Retrieve Climate Data for This Region
 
 ```{r extract climate for region}
 # Convert apicalis to a data frame and extract spatial coordinates (longitude, latitude)
-apicalis_df <- apicalis3 %>%
-  dplyr::bind_cols(sf::st_coordinates(apicalis3)) %>%  # Bind spatial coordinates to the data
-  mutate(time_bp = date2ybp(time_step)) %>%  # Convert time_step to years before present
+apicalis_df <- apicalis %>%
+  dplyr::bind_cols(sf::st_coordinates(apicalis)) %>%  # Bind spatial coordinates to the data
+  rename(x = X, y = Y) |>
+  mutate(percP = "pres") |>
+  bind_rows(apicalis3) |>
+  mutate(time_bp = -300) %>%  # Convert time_step to years before present
   as.data.frame() %>%  # Convert to a data frame
   dplyr::select(-geometry)  # Remove geometry column
 
@@ -218,11 +234,18 @@ apicalis_df <- location_slice_from_region_series(apicalis_df,
 ## Add Climate Reconstructions to the sf Object
 
 ```{r add climate to sf}
-# Add the climate reconstructions (bio05, bio06, bio12) to the Apicalis sf object and remove the time_step column
-apicalis4 <- apicalis3 %>%
+apicalis4 <- apicalis %>%
+  dplyr::bind_cols(sf::st_coordinates(apicalis)) %>%  # Bind spatial coordinates to the data
+  rename(x = X, y = Y) |>
+  mutate(percP = "pres") |>
+  bind_rows(apicalis3) |>
+  mutate(time_bp = -300) %>%  # Convert time_step to years before present
+  as.data.frame() %>%  # Convert to a data frame
+  dplyr::select(-geometry) |># Remove geometry column
   bind_cols(apicalis_df[, c("bio05", "bio06", "bio12")]) %>%  # Bind the climate data to the sf object
-  # dplyr::select(-time_step) %>%  # Remove time_step column as it’s not needed for modeling
-  filter(!is.na(.$bio05))  # Filter out any rows where bio05 is missing
+  filter(!is.na(.$bio05)) |>
+  mutate(percP = if_else(percP == "pabs", "pseudoabsence", "presence")) |>  # Mutate percP to the correct values
+  st_as_sf(coords = c("x", "y")) # Convert back to sf object                               
 ```
 
 # Fit the model by cross-validation
@@ -232,7 +255,7 @@ apicalis4 <- apicalis3 %>%
 ```{r make recipe}
 # Define a recipe for the model where 'class' is the outcome and other variables are predictors
 # Geometry is automatically ignored as a predictor for sf objects
-apicalis_rec <- recipe(apicalis4, formula = class ~ bio05 + bio06 + bio12)  # Define the model formula
+apicalis_rec <- recipe(apicalis4, formula = percP ~ bio05 + bio06 + bio12)  # Define the model formula
 apicalis_rec  # Check the recipe
 ```
 
@@ -254,7 +277,7 @@ apicalis_models <- workflow_set(
   # Update the workflow model for GAMs with a formula specifying smooth terms for continuous predictors
   update_workflow_model("default_gam",
                         spec = sdm_spec_gam(),
-                        formula = class ~ s(bio05, k = 10) + s(bio06, k = 10) + s(bio12, k = 10)) %>%
+                        formula = percP ~ s(bio05, k = 10) + s(bio06, k = 10) + s(bio12, k = 10)) %>%
   # Adjust controls to store information needed for the ensemble model
   option_add(control = control_ensemble_grid())
 ```
@@ -280,28 +303,28 @@ apicalis_models <- apicalis_models %>%
                metrics = sdm_metric_set(),  # Use the default set of SDM metrics
                verbose = TRUE)  # Print verbose output
 ```
-```{r }
+```{r Extract tss_max from ensemble model}
 
-
+#I did this when I had the brain zoomies,because I was using it for calculations to figure out if my maxSS results matched the model
 
 #extract value for tss_max
-tss_results <- collect_metrics(apicalis_models) %>% filter(.metric == "tss_max")
+#tss_results <- collect_metrics(apicalis_models) %>% filter(.metric == "tss_max")
 
 
 # Extract full ROC curves with sensitivity and specificity for each model
-roc_results <- collect_predictions(apicalis_models) %>%
-  group_by(wflow_id, .config, model) %>%
-  roc_curve(truth = class, .pred_presence) %>%  # Use .pred_presence as probability estimates
-  mutate(TSS = sensitivity + specificity - 1)
+#roc_results <- collect_predictions(apicalis_models) %>%
+ # group_by(wflow_id, .config, model) %>%
+ # roc_curve(truth = percP, .pred_pres) %>%  # Use .pred_presence as probability estimates
+ # mutate(TSS = sensitivity + specificity - 1)
 
 # Extract TSS-max threshold
-tss_thresholds <- roc_results %>%
-  group_by(wflow_id, model) %>%
-  slice_max(TSS) %>%  # Select the row where TSS is highest
-  select(wflow_id, model, .threshold, TSS)  # Use .threshold instead of threshold
+#tss_thresholds <- roc_results %>%
+#  group_by(wflow_id, model) %>%
+#  slice_max(TSS) %>%  # Select the row where TSS is highest
+#  select(wflow_id, model, .threshold, TSS)  # Use .threshold instead of threshold
 
 # Print results
-print(tss_thresholds)
+#print(tss_thresholds)
 
 
 ```
@@ -402,7 +425,7 @@ walk(760:800, function(timestep) {
     ggtitle(paste0("Krapp 70km apicalis Years BP: ", year_bp))  # Add a title with the year before present
 
   # Save the plot to a folder with filenames indicating the year BP
-  ggsave(filename = paste0("C:/github/SNR_SDM/Results/Apicalis Krapp model/stratified-random sampling/70km/apicalis_map_", 
+  ggsave(filename = paste0("C:/github/SNR_SDM/Results/Apicalis Krapp model/stratified-enviro sampling/70km/apicalis_map_", 
                          year_bp, " Krapp70km", ".png"),
        plot = p,
        width = 7, height = 7)
@@ -415,6 +438,14 @@ walk(760:800, function(timestep) {
 # Additional steps for validation and analysis
 
 ## Load midden data
+
+pr
+
+# True skills statistic using midden data
+
+This step is an additional validation step using the midden data set.
+
+The previous output is a continuous suitability gradient. for TSS to work we need to define suitability binary, so an area is classed as either suitable or unsuitable. to do this we need to define a threshold - above which is suitable and below is unsuitable. 50% is standard.
 
 ```{r load midden data set}
 #Midden data set is used for additional validation
@@ -481,12 +512,6 @@ print(organized_data)
 
 ```
 
-# True skills statistic using midden data
-
-This step is an additional validation step using the midden data set.
-
-The previous output is a continuous suitability gradient. for TSS to work we need to define suitability binary, so an area is classed as either suitable or unsuitable. to do this we need to define a threshold - above which is suitable and below is unsuitable. 50% is standard.
-
 ```{r  true skills statistic using midden data MaxSS}
 
 # -----------------------------------------------------------------
@@ -494,7 +519,7 @@ The previous output is a continuous suitability gradient. for TSS to work we nee
 # -----------------------------------------------------------------
 
 # Use a default threshold (0.5) to create a preliminary binary raster.
-threshold_init <- 0.5
+threshold_init <- 0.35
 apicalis_binary_init <- app(x = apicalis_spatrast, fun = \(i) i > threshold_init)
 time(apicalis_binary_init) <- time(apicalis_spatrast) |> pastclim::ybp2date()
 apicalis_rs_init <- sds(apicalis_binary_init)
@@ -771,7 +796,7 @@ print(paste0("F2 score: ", f2score))
 
 ```{r true skills statistic using midden data ORIGINAL}
 
-threshold <- 0.29 # we are defining the binary suitability threshold at 50%. 
+threshold <- 0.35 # we are defining the binary suitability threshold at 50%. 
 
 apicalis_binary <- app(x = apicalis_spatrast, fun = \(i) i > threshold) #making the binary
 
