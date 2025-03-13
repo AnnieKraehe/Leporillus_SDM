@@ -183,7 +183,7 @@ Sample Pseudo-Absences and Plot Apicalis Occurrence with Land Mask
 
 Stratified sampling in in physical space. Environmental space is less suitable for palaeo, because its easier to apply temporal depth to physical space stratification- lat, long, time
 
-```{r pseudo absence }
+```{r pseudo absence}
 # Sample pseudo-absences for Apicalis occurrence points between 300 and 90 years before present
 # apicalis3 <- sample_pseudoabs_time(apicalis %>%
 #                                      filter(time_bp == -300),
@@ -196,12 +196,38 @@ Stratified sampling in in physical space. Environmental space is less suitable f
 env_space_1950 <- c(climate_full[[1]][[800]], climate_full[[2]][[800]],
                     climate_full[[3]][[800]])
 
+
+############Get optimal resolution of the sampling grid
+# 1. Extract environmental values from the raster
+#env_values <- terra::as.data.frame(env_space_1950, xy = TRUE, na.rm = TRUE)
+
+# 2. Perform PCA on the environmental variables
+# Check the column names in env_values (they should match your variable names, e.g., bio05, bio06, bio12)
+#pca_res <- prcomp(env_values[, c("bio05_0", "bio06_0", "bio12_0")], scale. = TRUE)
+
+
+# 3. Create an sf object with the first two PC scores as the coordinates
+#env_pca_sf <- st_as_sf(data.frame(PC1 = pca_res$x[, 1],
+                                 # PC2 = pca_res$x[, 2],
+                                  #x = env_values$x,
+                                #  y = env_values$y),
+                       #coords = c("PC1", "PC2"))
+
+#opt_res <- optimRes(env_pca_sf, grid.res = seq(1, 100, by = 1), perc.thr = 10, cr = 1, showOpt = TRUE)
+
+#optimal_grid_res <- opt_res[[2]]
+#print(optimal_grid_res) 
+#= 9
+
+
+####
+
 apicalis3 <- paSampling(
   env.rast = env_space_1950,
   pres = apicalis %>% filter(time_bp == -300),
-  thres = 0.5, # you can tune this
+  thres = 0.85, # you can tune this
   n.tr = 3,
-  grid.res = 5 # you can tune this
+  grid.res = 9 # you can tune this
 ) |> st_drop_geometry()
 
 # Plot Apicalis occurrence with the current land mask
