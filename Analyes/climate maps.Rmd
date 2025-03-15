@@ -1,0 +1,43 @@
+---
+title: "climate maps"
+author: "Annie"
+date: "2025-03-15"
+output: html_document
+---
+# Climate variable maps
+
+This code creates 3 stacks of maps, one for each climate variable, at the same time steps as we used for the distribution maps. This helps us to understand the variables driving the changes in distribution.
+It needs to be run in the same environment as the SDM scripts, after they have been run. 
+
+```{r Climate variable maps}
+# Create a Stack of Maps for Each Climate Variable
+walk2(c("bio05", "bio06", "bio12"), 1:3, ~{
+  var_name <- .x
+  var_idx <- .y
+  
+  # Create a folder for the variable if it doesn't exist
+  dir.create(paste0("C:/github/SNR_SDM/Results/Climate_Maps/", var_name), showWarnings = FALSE)
+
+  # Loop over 41 time steps (40ka in 1ka timesteps starting at 0)
+  walk(760:800, function(timestep) {
+    year_bp <- time(climate_full[[1]])[timestep] - 1950  # Calculate years before present
+    
+    # Extract climate data for the variable and timestep
+    climate_snapshot <- climate_full[[var_idx]][[timestep]]
+    names(climate_snapshot) <- var_name  # Assign name to layer
+    
+    # Plot the map
+    p <- ggplot() +
+      geom_spatraster(data = climate_snapshot, aes(fill = !!sym(var_name))) +  # Map variable
+      scale_fill_terrain_c(name = var_name) +  # Add terrain scale
+      ggtitle(paste0("Krapp Climate Variable: ", var_name, " - Years BP: ", year_bp))
+    
+    # Save the plot
+    ggsave(filename = paste0("C:/github/SNR_SDM/Results/Climate_Maps/", var_name, "/",
+                             var_name, "_map_", year_bp, ".png"),
+           plot = p,
+           width = 7, height = 7)
+  })
+})
+
+```
