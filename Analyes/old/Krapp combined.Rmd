@@ -1,0 +1,532 @@
+---
+title: "Krapp conditor"
+author: "Annie"
+date: "2024-06-20"
+output: html_document
+---
+
+Using code written for paleoview
+
+```{r setup, include=FALSE}
+# Set global chunk options to display code by default
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Libraries
+
+```{r install_libraries, message=FALSE, warning=FALSE}
+
+# List of packages to check, install if needed, and load
+packages <- c(
+  "broom", "car", "DALEX", "dials", "dplyr", "ggplot2", "infer", 
+  "modeldata", "oz", "parsnip", "pastclim", "purrr", "readr", 
+  "recipes", "rsample", "rworldmap", "sf", "tidyr", "tidymodels", 
+  "tidysdm", "tidyterra", "tibble", "tune", "terra", "workflows", 
+  "workflowsets", "gtools", "fs"
+)
+
+# Function to display a cat message
+cat_message <- function(pkg, message_type) {
+  if (message_type == "installed") {
+    cat(paste0(pkg, " has been installed successfully!\n"))
+  } else if (message_type == "loading") {
+    cat(paste0(pkg, " is already installed and has been loaded!\n"))
+  }
+}
+
+# Install missing packages and load them
+for (pkg in packages) {
+  if (!requireNamespace(pkg, quietly = TRUE)) {
+    install.packages(pkg)
+    cat_message(pkg, "installed")
+  } else {
+    cat_message(pkg, "loading")
+  }
+  library(pkg, character.only = TRUE)
+}
+
+# If you are using renv, you can snapshot the renv after loading all the packages.
+
+# renv::snapshot()
+```
+
+```{r libraries}
+# Load necessary libraries for data manipulation, spatial analysis, plotting, and modeling
+library(broom)
+library(car)
+library(DALEX)
+library(dials)
+library(ggplot2)
+library(infer)
+library(modeldata)
+library(oz)
+library(parsnip)
+library(pastclim)
+library(purrr)
+library(readr)
+library(recipes)
+library(rsample)
+library(rworldmap)
+library(sf)
+library(tidyr)
+library(tidymodels)
+library(tidysdm)
+library(tidyterra)
+library(tibble)
+library(tune)
+library(terra)
+library(workflows)
+library(workflowsets)
+library(gtools)
+library(fs)
+library(dplyr)
+```
+
+# Set the working directory
+
+```{r Set the working directory}
+# Set the working directory to the processed data folder
+knitr::opts_knit$set(root.dir =("C:/github/SNR_SDM/Data/processed"))
+```
+
+# Download Krapp2021 dataset
+
+```{r download climate}
+# Download the Krapp2021 dataset using pastclim package
+pastclim::download_dataset("Krapp2021")
+```
+
+# Read conditor data
+
+```{r read file}
+# Set working directory to the processed data folder
+setwd("C:/github/SNR_SDM/Data/processed")
+
+# Read in the 'conditor.csv' file, print its contents, convert to an sf object, and set the CRS
+conditor <- read_csv("conditor.csv") %>%
+  {print(.); .} %>%  # Print the data to check its contents
+  st_as_sf(coords = c("longitude", "latitude")) %>%  # Convert to a simple features (sf) object using latitude and longitude
+  st_set_crs(4326)  # Set the Coordinate Reference System (CRS) to EPSG:4326 (GDA2020)
+```
+
+# Create an extent for Australia
+
+```{r}
+# Define an extent object for Australia using specific longitude (X) and latitude (Y) coordinates
+Aust_extent <- terra::ext(110, 152.5, -42.5, -7.5)
+```
+
+# Krapp2021 Land Mask
+
+```{r}
+# Create a land mask for the current time using the 'Krapp2021' dataset from the 'pastclim' package
+# This mask will restrict our area of interest to Australia
+land_mask_current <- pastclim::get_land_mask(time_bp = 0, dataset = "Krapp2021") %>%
+  crop(vect(Aust_extent)) %>%  # Crop to the Australian extent
+  aggregate(fact = 5, fun = "mean", na.rm = TRUE)  # Aggregate for better resolution (factor of 5), removing NAs
+```
+
+# Plot conditor Occurrence Data
+
+```{r Plot the data using ggplot2}
+# Plot the conditor occurrence points with the current land mask using ggplot2
+ggplot() +
+  geom_spatraster(data = land_mask_current, aes()) +  # Add the land mask as a spatial raster layer
+  scale_fill_terrain_c() +  # Use a terrain color scale for the land mask
+  geom_sf(data = conditor, aes(col = time_bp))  # Plot conditor occurrence points, colored by time_bp
+```
+
+# Create Climate Time Series Using Krapp2021
+
+```{r create climate time series}
+# Create a time series of palaeoclimate reconstructions using the 'Krapp2021' dataset
+# Variables used: bio05 (max temp), bio06 (min temp), bio12 (annual precipitation)
+climate_vars <- c('bio05','bio06','bio12')
+climate_full <- pastclim::region_series(
+  bio_variables = climate_vars,  # Specify the variables we are interested in
+  data = "Krapp2021",  # Use the Krapp2021 dataset
+  crop = vect(Aust_extent)  # Crop the climate data to the extent of Australia
+)
+
+
+```
+# sample pseudo absence in physical space
+ Sample Pseudo-Absences and Plot conditor Occurrence with Land Mask environmental space is less suitable for palaeo, because its easier to apply temporal depth to physical space stratification- lat, long, time
+
+```{r pseudo absence chunk}
+# Sample pseudo-absences for conditor occurrence points between 300 and 90 years before present
+conditor3 <- sample_pseudoabs_time(conditor %>%
+                                     filter(time_bp == -300),
+                                   n_per_presence = 3, # Generate 3 pseudo-absences per presence point
+                                   raster = climate_full[[1]], # Use the first layer of climate data as the reference raster
+                                   time_col = "time_bp", # Specify the time column
+                                   lubridate_fun = pastclim::ybp2date, # Convert years before present (ybp) to date
+                                   method = c("dist_min", km2m(70))) # Ensure pseudo-absences are at least 70 km away
+
+
+
+
+# Plot conditor occurrence with the current land mask
+ggplot() +
+  geom_spatraster(data = land_mask_current) +  # Add the land mask raster
+  scale_fill_terrain_c() +  # Use a terrain color scale
+  geom_sf(data = conditor3, aes(col = class))  # Plot conditor pseudo-absence and occurrence points, colored by class
+```
+
+# Retrieve Climate Data for This Region
+
+```{r extract climate for region}
+# Convert conditor to a data frame and extract spatial coordinates (longitude, latitude)
+conditor_df <- conditor3 %>%
+  dplyr::bind_cols(sf::st_coordinates(conditor3)) %>%  # Bind spatial coordinates to the data
+  mutate(time_bp = date2ybp(time_step)) %>%  # Convert time_step to years before present
+  as.data.frame() %>%  # Convert to a data frame
+  dplyr::select(-geometry)  # Remove geometry column
+
+# Retrieve climate data for the conditor occurrence points from the climate series
+conditor_df <- location_slice_from_region_series(conditor_df,
+                                                 region_series = climate_full)  # Use the full climate series for extraction
+```
+
+# Add Climate Reconstructions to the sf Object
+
+```{r add climate to sf}
+# Add the climate reconstructions (bio05, bio06, bio12) to the conditor sf object and remove the time_step column
+conditor4 <- conditor3 %>%
+  bind_cols(conditor_df[, c("bio05", "bio06", "bio12")]) %>%  # Bind the climate data to the sf object
+  # dplyr::select(-time_step) %>%  # Remove time_step column as it’s not needed for modeling
+  filter(!is.na(.$bio05))  # Filter out any rows where bio05 is missing
+```
+
+# Set Up a Recipe for Modeling
+
+```{r make recipe}
+# Define a recipe for the model where 'class' is the outcome and other variables are predictors
+# Geometry is automatically ignored as a predictor for sf objects
+conditor_rec <- recipe(conditor4, formula = class ~ bio05 + bio06 + bio12)  # Define the model formula
+conditor_rec  # Check the recipe
+```
+
+# Build a Workflow Set for Model Tuning
+
+```{r specify models}
+# Create a workflow set of different models for tuning
+# We will use glm, gam, random forest, and boosted trees as our models
+conditor_models <- workflow_set(
+  preproc = list(default = conditor_rec),  # Use the recipe for preprocessing
+  models = list(
+    glm = sdm_spec_glm(),  # Generalized Linear Model
+    gam = sdm_spec_gam(),  # Generalized Additive Model
+    rf = sdm_spec_rf(),    # Random Forest with tunable hyperparameters
+    gbm = sdm_spec_boost_tree()  # Boosted Tree model with tunable hyperparameters
+  ),
+  cross = TRUE  # Cross all combinations of preprocessing and models
+) %>%
+  # Update the workflow model for GAMs with a formula specifying smooth terms for continuous predictors
+  update_workflow_model("default_gam",
+                        spec = sdm_spec_gam(),
+                        formula = class ~ s(bio05, k = 10) + s(bio06, k = 10) + s(bio12, k = 10)) %>%
+  # Adjust controls to store information needed for the ensemble model
+  option_add(control = control_ensemble_grid())
+```
+
+# Spatial Block Cross-Validation for Model Tuning
+
+```{r set up cross validation}
+# Set up spatial block cross-validation with 5 folds for tuning and assessing models
+set.seed(1005)  # Set seed for reproducibility
+conditor_cv <- spatial_block_cv(conditor4, v = 5)  # Create spatial block cross-validation with 5 folds
+autoplot(conditor_cv)  # Plot the cross-validation folds
+```
+
+# Tune and Assess Models
+
+```{r tune models}
+# Use block cross-validation folds to tune and assess models
+set.seed(123)  # Set seed for reproducibility
+conditor_models <- conditor_models %>%
+  workflow_map("tune_grid",  # Tune hyperparameters using grid search
+               resamples = conditor_cv,  # Use the cross-validation resamples
+               grid = 5,  # Use a grid size of 5 for tuning
+               metrics = sdm_metric_set(),  # Use the default set of SDM metrics
+               verbose = TRUE)  # Print verbose output
+```
+
+# Create an Ensemble Model
+
+```{r ensemble}
+# Create an ensemble by selecting the best set of parameters for each model
+# The Boyce continuous index will be used as the metric for selecting the best random forest and boosted tree models
+conditor_ensemble <- simple_ensemble() %>%
+  add_member(conditor_models, metric = "boyce_cont")  # Add members to the ensemble using Boyce index as the metric
+
+autoplot(conditor_ensemble)  # Plot the ensemble model performance
+```
+
+# Make Predictions for the Last Glacial Maximum (LGM)
+
+```{r create LGM}
+# Create a climate raster for the Last Glacial Maximum (LGM) using the correct layer (21) for 20,000 BP
+climate_lgm <- rast(list(climate_full[[1]][[779]], climate_full[[2]][[779]], climate_full[[3]][[779]]))  # Extract 20,000 BP layers
+names(climate_lgm) <- c("bio05", "bio06", "bio12")  # Rename the layers to match the climate variables
+
+
+```
+
+# Predict Using the Ensemble Model for LGM
+
+```{r predict lgm}
+# Use the ensemble model to predict species occurrence probabilities for the Last Glacial Maximum (LGM)
+prediction_lgm <- predict_raster(conditor_ensemble, climate_lgm)  # Predict LGM probabilities
+
+# Plot the predicted probabilities using ggplot2
+ggplot() +
+  geom_spatraster(data = prediction_lgm, aes(fill = mean)) +  # Add the prediction raster to the plot
+  scale_fill_terrain_c(name = "Probability\nof occurrence")  # Use a terrain color scale to show probabilities
+```
+
+####### 
+
+```{r save_model_spatraster}
+
+# Initialize an empty SpatRaster stack
+conditor_spatrast <- NULL
+
+# Loop through 40 time steps (40ka in 1ka timesteps) to create and stack rasters
+walk(760:800, function(timestep) {
+  year_bp <- time(climate_full[[1]])[timestep] - 1950  # Calculate years before present for each timestep
+  
+  # Create a climate snapshot for the current timestep
+  climate_snapshot <- rast(list(
+    climate_full[[1]][[timestep]], 
+    climate_full[[2]][[timestep]], 
+    climate_full[[3]][[timestep]]
+  ))
+  names(climate_snapshot) <- c("bio05", "bio06", "bio12")  # Rename layers to match the climate variables
+
+  # Predict species occurrence for the current climate snapshot
+  prediction_raster <- predict_raster(conditor_ensemble, climate_snapshot)
+  
+  # Stack the prediction raster along the z-axis
+  conditor_spatrast <<- if (is.null(conditor_spatrast)) {
+    prediction_raster
+  } else {
+    c(conditor_spatrast, prediction_raster)
+  }
+})
+
+# Assign time steps to the z-axis of the stacked raster
+time(conditor_spatrast) <- time(climate_full[[1]])[760:800] - 1950
+
+# Save the stacked SpatRaster to a file
+output_file <- "C:/github/SNR_SDM/Results/combined Krapp model/predictions_stack.tif"
+writeRaster(conditor_spatrast, filename = output_file, overwrite = TRUE)
+```
+
+```{r load midden data set}
+# Load the independent dataset
+dated_middens <- read.csv("C:/github/SNR_SDM/Data/processed/datedmiddens.csv")
+
+# Convert to sf object (assuming it contains longitude and latitude columns)
+middens_sf <- dated_middens %>%
+  st_as_sf(coords = c("longitude", "latitude"), crs = 4326)  # Adjust column names if different
+
+# Reproject to match the CRS of the conditor_spatrast
+middens_sf <- st_transform(middens_sf, crs = crs(conditor_spatrast))
+
+# Convert sf object to SpatVector for compatibility with terra::extract
+middens_vect <- terra::vect(middens_sf)
+
+# Extract predicted values from the raster stack for presence locations
+extracted_values <- terra::extract(conditor_spatrast, middens_vect)
+
+# Bind the extracted predicted values back to the original sf object
+middens_sf$predicted <- extracted_values[, 2]  # Assuming the second column contains predictions
+
+# Extract timesteps from the raster stack
+raster_timesteps <- time(conditor_spatrast)
+
+# Round time_bp to the nearest raster timestep
+middens_sf <- middens_sf %>%
+  mutate(
+    binned_time_bp = sapply(time_bp, function(x) {
+      raster_timesteps[which.min(abs(raster_timesteps - x))]
+    }),
+    lubridate_time = ybp2date(time_bp)
+  )
+
+# Create a data frame with raster timesteps
+timesteps_df <- data.frame(
+  raster_timestep = raster_timesteps  # Timesteps from the raster
+)
+
+# Count occurrences per timestep
+organized_data <- timesteps_df %>%
+  left_join(
+    middens_sf %>%
+      group_by(binned_time_bp) %>%
+      summarise(
+        count = n(),                        # Number of occurrences
+        mean_value = mean(predicted, na.rm = TRUE)  # Mean predicted suitability (example)
+      ),
+    by = c("raster_timestep" = "binned_time_bp")
+  )
+
+# Replace NAs with 0 for counts (if no data in some bins)
+organized_data <- organized_data %>%
+  mutate(
+    count = replace_na(count, 0),
+    mean_value = replace_na(mean_value, NA)  # Leave NA for mean_value where no data exists
+  )
+
+# View the organized data
+print(organized_data)
+
+
+
+```
+
+
+```{r true skills statistic}
+# previous output is a continuous suitability gradient. for TSS to work we need to define suitability binary, so an area is classed as either suitable or unsuitable. to do this we need to define a threshold - above which is suitable and below is unsuitable. 50% is standard.
+
+threshold <- 0.5 # we are defining the binary suitability threshold at 50%. 
+
+conditor_binary <- app(x = conditor_spatrast, fun = \(i) i > threshold) #making the binary
+
+time(conditor_binary) <- time(conditor_spatrast) |> pastclim::ybp2date()
+conditor_rs <- sds(conditor_binary)
+names(conditor_rs) <- "pres_abs"  
+pseudoabs <- sample_pseudoabs_time(
+  data = dated_middens,
+  raster = conditor_rs,
+  n_per_presence = 3, # 3 is standard absence per presence
+  time_col = "time_bp",
+  lubridate_fun = pastclim::ybp2date,
+  method = c("dist_min", km2m(200)),
+  time_buffer = 3650000/2
+) 
+# Plot the pseudo abcense + presence points with the current land mask using ggplot2
+ggplot() +
+  geom_spatraster(data = land_mask_current, aes()) +  # Add the land mask as a spatial raster layer
+  scale_fill_terrain_c() +  # Use a terrain color scale for the land mask
+  geom_point(data = pseudoabs, aes(col = time_step, x = longitude, y = latitude)) + 
+  geom_point(data = dated_middens, aes(x = longitude, y = latitude), color = "red")
+# Create data frame in correct format
+pres_abs_observed <- pseudoabs |> mutate(time_bp = date2ybp(time_step)) |>
+  select(-class, -time_step) |> rowid_to_column("name")
+#extract presence and absence points from SDM 
+#location_slice_from_region_series comes from function on my computer, not from package
+pres_abs_pred <- location_slice_from_region_series(
+  x = pres_abs_observed,
+  region_series = conditor_rs
+)
+pres_abs_pred$class <- pseudoabs$class
+# Confusion matrix
+a <- nrow(filter(pres_abs_pred, class == "presence", pres_abs == 1))
+b <- nrow(filter(pres_abs_pred, class == "pseudoabs", pres_abs == 1))
+c <- nrow(filter(pres_abs_pred, class == "presence", pres_abs == 0))
+d <- nrow(filter(pres_abs_pred, class == "pseudoabs", pres_abs == 0))
+tpr <- a/(a+c)
+tnr <- d/(b+d)
+tss <- tpr + tnr - 1
+sorensen <- 2*(a/(c+(2*a)+d))
+f2score <- 2*(((a/(a+b))*tpr)/((a/(a+b))+tpr)) 
+```
+
+
+
+
+#Create a Stack of Predictions for All Time Steps
+
+```{r stack o maps}
+# Loop over 40 time steps (40ka in 1ka timesteps) to create and save a map of predictions for each time step
+walk(760:800, function(timestep) {
+  year_bp <- time(climate_full[[1]])[timestep] - 1950  # Calculate years before present for each timestep
+  
+  # Create a climate snapshot for the current timestep
+  climate_snapshot <- rast(list(climate_full[[1]][[timestep]], 
+                                climate_full[[2]][[timestep]], 
+                                climate_full[[3]][[timestep]]))
+  names(climate_snapshot) <- c("bio05", "bio06", "bio12")  # Rename layers to match the climate variables
+
+  # Predict species occurrence for the current climate snapshot
+  prediction1 <- predict_raster(conditor_ensemble, climate_snapshot)
+
+  # Plot the predictions using ggplot2
+  p <- ggplot() +
+    geom_spatraster(data = prediction1, aes(fill = mean)) +  # Add the prediction raster
+    scale_fill_terrain_c(name = "Probability\nof occurrence") +  # Use a terrain color scale
+    ggtitle(paste0("Krapp 70km conditor Years BP: ", year_bp))  # Add a title with the year before present
+
+  # Save the plot to a folder with filenames indicating the year BP
+  ggsave(filename = paste0("C:/github/SNR_SDM/Results/conditor Krapp model/stratified-random sampling/70km/conditor_map_", 
+                         year_bp, " Krapp70km", ".png"),
+       plot = p,
+       width = 7, height = 7)
+
+})
+```
+
+# Partial Dependence Profiles and Variable Importance \## PDP for bio12
+
+```{r PDP}
+# Explain the ensemble model to generate partial dependence profiles and variable importance
+explainer_conditor_ens <- explain_tidysdm(conditor_ensemble)  # Create an explainer object for the ensemble model
+
+# Compute variable importance using the DALEX package
+vip_ensemble <- model_parts(explainer = explainer_conditor_ens)  # Calculate variable importance
+plot(vip_ensemble)  # Plot the variable importance results
+
+# Generate a partial dependence profile for bio12
+pdp_bio12 <- model_profile(explainer_conditor_ens, N = 500, variables = "bio12")  # Generate PDP for bio12
+plot(pdp_bio12)  # Plot the partial dependence profile for bio12
+
+
+#$ PDP for bio05
+
+# Generate and plot a partial dependence profile for bio05
+pdp_bio05 <- model_profile(explainer_conditor_ens, N = 500, variables = "bio05")
+plot(pdp_bio05)
+
+
+#$ PDP for bio06
+ 
+# Generate and plot a partial dependence profile for bio06
+pdp_bio06 <- model_profile(explainer_conditor_ens, N = 500, variables = "bio06")
+plot(pdp_bio06)
+```
+
+```{r Climate variable maps}
+# Create a Stack of Maps for Each Climate Variable
+walk2(c("bio05", "bio06", "bio12"), 1:3, ~{
+  var_name <- .x
+  var_idx <- .y
+  
+  # Create a folder for the variable if it doesn't exist
+  dir.create(paste0("C:/github/SNR_SDM/Results/Climate_Maps/", var_name), showWarnings = FALSE)
+
+  # Loop over 41 time steps (40ka in 1ka timesteps starting at 0)
+  walk(760:800, function(timestep) {
+    year_bp <- time(climate_full[[1]])[timestep] - 1950  # Calculate years before present
+    
+    # Extract climate data for the variable and timestep
+    climate_snapshot <- climate_full[[var_idx]][[timestep]]
+    names(climate_snapshot) <- var_name  # Assign name to layer
+    
+    # Plot the map
+    p <- ggplot() +
+      geom_spatraster(data = climate_snapshot, aes(fill = !!sym(var_name))) +  # Map variable
+      scale_fill_terrain_c(name = var_name) +  # Add terrain scale
+      ggtitle(paste0("Krapp Climate Variable: ", var_name, " - Years BP: ", year_bp))
+    
+    # Save the plot
+    ggsave(filename = paste0("C:/github/SNR_SDM/Results/Climate_Maps/", var_name, "/",
+                             var_name, "_map_", year_bp, ".png"),
+           plot = p,
+           width = 7, height = 7)
+  })
+})
+
+```
+
