@@ -1,16 +1,10 @@
 ---
-title: "Krapp conditor"
+title: "Krapp conditor finished"
 author: "Annie"
-date: "2024-06-20"
-output:
-  word_document: default
-  html_document: default
-  pdf_document: default
+date: "2025-03-14"
+output: html_document
 ---
 
-Using code written for paleoview
-
-\#`{r setup, include=FALSE} # Set global chunk options to display code by default #knitr::opts_chunk$set(echo = TRUE) #`
 
 # Libraries
 
@@ -187,7 +181,7 @@ env_space_1950 <- c(climate_full[[1]][[800]], climate_full[[2]][[800]],
 
 
 
-```{r grid resolution optimisation}
+#```{r grid resolution optimisation}
 # THIS TAKES AGES BUT ONLY NEEDS TO BE DONE ONCE
 
 
@@ -197,7 +191,6 @@ env_space_1950 <- c(climate_full[[1]][[800]], climate_full[[2]][[800]],
    # 2. Perform PCA on the environmental variables
    #Check the column names in env_values 
    pca_res <- prcomp(env_values[, c("bio05_0", "bio06_0", "bio12_0")], scale. = TRUE)
-
 
     # 3. Create an sf object with the first two PC scores as the coordinates
     env_pca_sf <- st_as_sf(data.frame(PC1 = pca_res$x[, 1],
@@ -210,7 +203,7 @@ env_space_1950 <- c(climate_full[[1]][[800]], climate_full[[2]][[800]],
 
      optimal_grid_res <- opt_res[[2]]
      print(optimal_grid_res) 
-```
+#```
 
 
 ```{r Pseudo absence sampling}
@@ -392,7 +385,7 @@ walk(760:800, function(timestep) {
 time(conditor_spatrast) <- time(climate_full[[1]])[760:800] - 1950
 
 # Save the stacked SpatRaster to a file
-output_file <- "C:/github/SNR_SDM/Results/conditor Krapp model/predictions_stack.tif"
+output_file <- "C:/github/SNR_SDM/Results/stratified enviromental sampling/conditor/predictions_stack.tif"
 writeRaster(conditor_spatrast, filename = output_file, overwrite = TRUE)
 ```
 
@@ -416,11 +409,12 @@ walk(760:800, function(timestep) {
   p <- ggplot() +
     geom_spatraster(data = prediction1, aes(fill = mean)) +  # Add the prediction raster
     scale_fill_terrain_c(name = "Probability\nof occurrence") +  # Use a terrain color scale
-    ggtitle(paste0("Krapp 70km conditor Years BP: ", year_bp))  # Add a title with the year before present
+    ggtitle(bquote("Predicted distribution of " * italic("Leporillus conditor") * " (Krapp2021)  Years BP: " * .(year_bp)))
+  # Add a title with the year before present
 
   # Save the plot to a folder with filenames indicating the year BP
-  ggsave(filename = paste0("C:/github/SNR_SDM/Results/conditor Krapp model/stratified-enviro sampling/70km/conditor_map_", 
-                         year_bp, " Krapp70km", ".png"),
+    ggsave(filename = paste0("C:/github/SNR_SDM/Results/stratified enviromental sampling/conditor/model/conditor_map_",
+      year_bp, ".png"),
        plot = p,
        width = 7, height = 7)
 
@@ -447,20 +441,20 @@ dated_middens <- read.csv("C:/github/SNR_SDM/Data/processed/datedmiddens.csv")
 middens_sf <- dated_middens %>%
   st_as_sf(coords = c("longitude", "latitude"), crs = 4326)  # Adjust column names if different
 
-# Reproject to match the CRS of the apicalis_spatrast
-middens_sf <- st_transform(middens_sf, crs = crs(apicalis_spatrast))
+# Reproject to match the CRS of the conditor_spatrast
+middens_sf <- st_transform(middens_sf, crs = crs(conditor_spatrast))
 
 # Convert sf object to SpatVector for compatibility with terra::extract
 middens_vect <- terra::vect(middens_sf)
 
 # Extract predicted values from the raster stack for presence locations
-extracted_values <- terra::extract(apicalis_spatrast, middens_vect)
+extracted_values <- terra::extract(conditor_spatrast, middens_vect)
 
 # Bind the extracted predicted values back to the original sf object
 middens_sf$predicted <- extracted_values[, 2]  # Assuming the second column contains predictions
 
 # Extract timesteps from the raster stack
-raster_timesteps <- time(apicalis_spatrast)
+raster_timesteps <- time(conditor_spatrast)
 
 # Round time_bp to the nearest raster timestep
 middens_sf <- middens_sf %>%
@@ -501,7 +495,56 @@ print(organized_data)
 
 
 ```
+```{r plot middens}
+# Create and save maps with midden locations overlayed on SDM predictions
 
+# Convert midden data to sf object if not already converted
+middens_sf <- dated_middens %>%
+  st_as_sf(coords = c("longitude", "latitude"), crs = 4326) %>%
+  st_transform(crs = crs(conditor_spatrast))
+
+# Extract raster timesteps
+raster_timesteps <- time(conditor_spatrast)
+
+# Loop through each timestep in your stacked raster predictions
+walk(seq_along(raster_timesteps), function(i) {
+  
+  current_year_bp <- raster_timesteps[i]
+
+  # Filter middens relevant to the current raster timestep (rounded to nearest 1000 years)
+  current_middens <- middens_sf %>%
+    filter(abs(time_bp - current_year_bp) <= 500) # within ±500 years of raster timestep
+
+  # Get the raster layer for the current timestep
+  current_prediction <- conditor_spatrast[[i]]
+
+  # Plot SDM prediction with midden points overlayed
+  p <- ggplot() +
+    geom_spatraster(data = current_prediction, aes(fill = mean)) +
+    scale_fill_terrain_c(name = "Probability\nof occurrence") +
+    geom_sf(data = current_middens, colour = "#FF3399", size = 2, shape = 19) +
+    ggtitle(bquote(italic("Leporillus conditor") * " SDM with Middens — Years BP: " * .(current_year_bp)))
+ 
+    theme_minimal() +
+    theme(
+      plot.background = element_rect(fill = "white"),
+      panel.background = element_rect(fill = "grey95"),
+      panel.grid = element_line(colour = "white")
+    )
+
+  # Save plot
+  ggsave(
+    filename = paste0(
+      "C:/github/SNR_SDM/Results/stratified enviromental sampling/conditor/midden maps/conditor_middens_",
+      current_year_bp, ".png"
+    ),
+    plot = p,
+    width = 7,
+    height = 7
+  )
+})
+
+```
 # Calculate TSS 
 The model output is a continuous suitability gradient. for TSS to work we need to define suitability binary. To do this we need to define a threshold - above which is suitable and below is unsuitable. We use MasSS to calculate and define the optimal threshold.
 
