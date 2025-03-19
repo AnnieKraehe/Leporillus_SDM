@@ -181,7 +181,7 @@ env_space_1950 <- c(climate_full[[1]][[800]], climate_full[[2]][[800]],
 
 
 
-```{r grid resolution optimisation}
+#```{r grid resolution optimisation}
 # THIS TAKES AGES BUT ONLY NEEDS TO BE DONE ONCE
 
 
@@ -204,7 +204,7 @@ env_space_1950 <- c(climate_full[[1]][[800]], climate_full[[2]][[800]],
 
      optimal_grid_res <- opt_res[[2]]
      print(optimal_grid_res) 
-```
+#```
 
 
 ```{r Pseudo absence sampling}
@@ -212,9 +212,9 @@ env_space_1950 <- c(climate_full[[1]][[800]], climate_full[[2]][[800]],
 apicalis3 <- paSampling(
   env.rast = env_space_1950,
   pres = apicalis %>% filter(time_bp == -300),
-  thres = 0.85, # you can tune this
-  n.tr = 3,
-  grid.res = 9 # calculated in optimisation step above, but entered manually
+  thres = 0.75, # you can tune this
+  n.tr = 9,
+  grid.res = 9 # calculated in optimisation step above, but entered manually 
 ) |> st_drop_geometry()
 
 # Plot apicalis occurrence with the current land mask
@@ -321,9 +321,9 @@ apicalis_models <- apicalis_models %>%
 
 ```{r ensemble}
 # Create an ensemble by selecting the best set of parameters for each model
-# The Boyce continuous index will be used as the metric for selecting the best random forest and boosted tree models
+# tss_max will be used as the metric for selecting the best random forest and boosted tree models
 apicalis_ensemble <- simple_ensemble() %>%
-  add_member(apicalis_models, metric = "boyce_cont")  # Add members to the ensemble using Boyce index as the metric
+  add_member(apicalis_models, metric = "boyce_cont")  # Add members to the ensemble using tss_max as the metric
 
 autoplot(apicalis_ensemble)  # Plot the ensemble model performance
 ```
@@ -386,7 +386,7 @@ walk(760:800, function(timestep) {
 time(apicalis_spatrast) <- time(climate_full[[1]])[760:800] - 1950
 
 # Save the stacked SpatRaster to a file
-output_file <- "C:/github/SNR_SDM/Results/apicalis Krapp model/predictions_stack.tif"
+output_file <- "C:/github/SNR_SDM/Results/stratified enviromental sampling/apicalis/predictions_stack.tif"
 writeRaster(apicalis_spatrast, filename = output_file, overwrite = TRUE)
 ```
 
