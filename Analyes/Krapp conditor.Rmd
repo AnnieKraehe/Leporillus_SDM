@@ -211,8 +211,8 @@ env_space_1950 <- c(climate_full[[1]][[800]], climate_full[[2]][[800]],
 conditor3 <- paSampling(
   env.rast = env_space_1950,
   pres = conditor %>% filter(time_bp == -300),
-  thres = 0.85, # you can tune this
-  n.tr = 3,
+  thres = 0.75, # you can tune this
+  n.tr = 9,
   grid.res = 9 # calculated in optimisation step above, but entered manually
 ) |> st_drop_geometry()
 
@@ -322,7 +322,7 @@ conditor_models <- conditor_models %>%
 # Create an ensemble by selecting the best set of parameters for each model
 # The Boyce continuous index will be used as the metric for selecting the best random forest and boosted tree models
 conditor_ensemble <- simple_ensemble() %>%
-  add_member(conditor_models, metric = "boyce_cont")  # Add members to the ensemble using Boyce index as the metric
+  add_member(conditor_models, metric = "tss_max")  # Add members to the ensemble using Boyce index as the metric
 
 autoplot(conditor_ensemble)  # Plot the ensemble model performance
 ```

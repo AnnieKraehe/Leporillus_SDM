@@ -217,13 +217,46 @@ apicalis3 <- paSampling(
   grid.res = 9 # calculated in optimisation step above, but entered manually 
 ) |> st_drop_geometry()
 
-# Plot apicalis occurrence with the current land mask
+# Load world map and convert to sf object
+world_map <- rworldmap::getMap(resolution = "high")
+land_outline <- sf::st_as_sf(world_map)  # Do not filter, keeping all land
+
+
+
+# Define the plot
 ggplot() +
-  geom_spatraster(data = land_mask_current) +  # Add the land mask raster
-  scale_fill_terrain_c() +  # Use a terrain color scale
-  geom_point(data = apicalis3, aes(x, y), col = "blue") +
-  geom_sf(data = apicalis |> filter(time_bp == -300),
-             col = "red") # Plot apicalis pseudo-absence and occurrence points, colored by class
+  geom_sf(data = australia_outline, fill = "#F9E3D9", color = "#F1CFCF") +  # Use proper landmass outline
+  
+  # Pseudo-absences (circles) with thin black outline
+  geom_point(data = apicalis3, aes(x, y, color = "Pseudo Absence", shape = "Pseudo Absence"), 
+             size = 2, stroke = 0) +  
+  
+  # Presences (triangles) with thin black outline
+  geom_sf(data = apicalis |> filter(time_bp == -300), aes(color = "Presence", shape = "Presence"), 
+          size = 2, stroke = 0) +  
+  
+  scale_color_manual(values = c("Presence" = "#D689FF", "Pseudo Absence" = "#00D19B")) +  # Define colors
+  scale_shape_manual(values = c("Presence" = 17, "Pseudo Absence" = 16)) +  # Triangles (17) for Presence, Circles (16) for Pseudo Absence
+  
+  labs(
+    title = "Pseudo Absences in Environmental Space",
+    x = "Longitude",
+    y = "Latitude",
+    color = "Legend",
+    shape = "Legend"  # Ensure legend applies to both color & shape
+  ) +
+  coord_sf(xlim = c(110, 150), ylim = c(-40, -10)) +  # Crop correctly
+  theme_minimal() +
+  theme(
+    panel.background = element_rect(fill = "#DCF3FC", color = NA),  # Background color for map
+    plot.background = element_rect(fill = "white", color = NA),  # Keep plot background white
+    panel.grid.major = element_line(color = "white"),  # White major gridlines
+    panel.grid.minor = element_line(color = "white")   # White minor gridlines
+  )
+
+
+
+
 ```
 
 ## Retrieve Climate Data for This Region
@@ -333,8 +366,8 @@ autoplot(apicalis_ensemble)  # Plot the ensemble model performance
 ## Make Predictions for the Last Glacial Maximum (LGM)
 
 ```{r create LGM}
-# Create a climate raster for the Last Glacial Maximum (LGM) using the correct layer (21) for 20,000 BP
-climate_lgm <- rast(list(climate_full[[1]][[779]], climate_full[[2]][[779]], climate_full[[3]][[779]]))  # Extract 20,000 BP layers
+# Create a climate raster for the Last Glacial Maximum (LGM) using the correct layer (779) for 21,000 BP
+climate_lgm <- rast(list(climate_full[[1]][[538]], climate_full[[2]][[538]], climate_full[[3]][[538]]))  # Extract 20,000 BP layers
 names(climate_lgm) <- c("bio05", "bio06", "bio12")  # Rename the layers to match the climate variables
 
 
@@ -350,6 +383,30 @@ prediction_lgm <- predict_raster(apicalis_ensemble, climate_lgm)  # Predict LGM 
 ggplot() +
   geom_spatraster(data = prediction_lgm, aes(fill = mean)) +  # Add the prediction raster to the plot
   scale_fill_terrain_c(name = "Probability\nof occurrence")  # Use a terrain color scale to show probabilities
+
+
+# Load world map data and filter for Australia
+world_map <- rworldmap::getMap(resolution = "high")
+australia_outline <- sf::st_as_sf(world_map) %>%
+  dplyr::filter(ADMIN == "Australia")  # Keep only Australia
+
+# Define the point location (convert to a data frame for ggplot)
+point_location <- data.frame(
+  longitude = 118.965510,
+  latitude = -24.270740  # South is negative in latitude
+)
+
+# Plot the predicted probabilities with an Australia outline and the red dot
+ggplot() +
+  geom_spatraster(data = prediction_lgm, aes(fill = mean)) +  # Add the prediction raster
+  scale_fill_terrain_c(name = "Probability\nof occurrence") +  # Use a terrain color scale
+  geom_sf(data = australia_outline, fill = NA, color = "black", linewidth = 0.6) +  # Add black outline
+  geom_point(data = point_location, aes(x = longitude, y = latitude), color = "red", size = 1) +  # Add red dot
+  coord_sf(xlim = c(112, 150), ylim = c(-40, -10))  # Crop to 10°S–40°S latitude and 110°E–150°E longitude
+
+
+
+
 ```
 
 ## save model as spatraster
@@ -393,6 +450,11 @@ writeRaster(apicalis_spatrast, filename = output_file, overwrite = TRUE)
 ## Create a Stack of Predictions and Plot for All Time Steps
 
 ```{r stack o maps}
+# Load world map data and filter for Australia
+world_map <- rworldmap::getMap(resolution = "high")
+australia_outline <- sf::st_as_sf(world_map) %>%
+  dplyr::filter(ADMIN == "Australia")  # Keep only Australia
+
 # Loop over 40 time steps (40ka in 1ka timesteps) to create and save a map of predictions for each time step
 walk(760:800, function(timestep) {
   year_bp <- time(climate_full[[1]])[timestep] - 1950  # Calculate years before present for each timestep
@@ -410,16 +472,17 @@ walk(760:800, function(timestep) {
   p <- ggplot() +
     geom_spatraster(data = prediction1, aes(fill = mean)) +  # Add the prediction raster
     scale_fill_terrain_c(name = "Probability\nof occurrence") +  # Use a terrain color scale
+    geom_sf(data = australia_outline, fill = NA, color = "black", linewidth = 0.6) +  # Add black Australia outline
+    coord_sf(xlim = c(112, 150), ylim = c(-40, -10)) +  # Crop to 10°S–40°S latitude, 110°E–150°E longitude
     ggtitle(bquote("Predicted distribution of " * italic("Leporillus apicalis") * " (Krapp2021)  Years BP: " * .(year_bp)))
-  # Add a title with the year before present
 
   # Save the plot to a folder with filenames indicating the year BP
-    ggsave(filename = paste0("C:/github/SNR_SDM/Results/stratified enviromental sampling/apicalis/model/apicalis_map_",
-      year_bp, ".png"),
-       plot = p,
-       width = 7, height = 7)
-
+  ggsave(filename = paste0("C:/github/SNR_SDM/Results/stratified enviromental sampling/apicalis/model/apicalis_map_",
+                           year_bp, ".png"),
+         plot = p,
+         width = 7, height = 7)
 })
+
 ```
 
 # **Model ends here.**
@@ -497,12 +560,18 @@ print(organized_data)
 
 ```
 ```{r plot middens}
-# Create and save maps with midden locations overlayed on SDM predictions
+install.packages("rworldxtra")
+library(rworldxtra)
+# Load world map data and filter for Australia
+world_map <- rworldmap::getMap(resolution = "high")
+australia_outline <- sf::st_as_sf(world_map) %>%
+  dplyr::filter(ADMIN == "Australia")  # Keep only Australia
 
-# Convert midden data to sf object if not already converted
-middens_sf <- dated_middens %>%
-  st_as_sf(coords = c("longitude", "latitude"), crs = 4326) %>%
-  st_transform(crs = crs(apicalis_spatrast))
+# Define the point location (convert to a data frame for ggplot)
+point_location <- data.frame(
+  longitude = 118.965510,
+  latitude = -24.270740  # South is negative in latitude
+)
 
 # Extract raster timesteps
 raster_timesteps <- time(apicalis_spatrast)
@@ -519,21 +588,17 @@ walk(seq_along(raster_timesteps), function(i) {
   # Get the raster layer for the current timestep
   current_prediction <- apicalis_spatrast[[i]]
 
-  # Plot SDM prediction with midden points overlayed
+  # Plot SDM prediction with midden points overlayed and purple reference dot
   p <- ggplot() +
-    geom_spatraster(data = current_prediction, aes(fill = mean)) +
-    scale_fill_terrain_c(name = "Probability\nof occurrence") +
-    geom_sf(data = current_middens, colour = "#FF3399", size = 2, shape = 19) +
+    geom_spatraster(data = current_prediction, aes(fill = mean)) +  # Add the prediction raster
+    scale_fill_terrain_c(name = "Probability\nof occurrence") +  # Use a terrain color scale
+    geom_sf(data = australia_outline, fill = NA, color = "black", linewidth = 0.6) +  # Add black Australia outline
+    geom_sf(data = current_middens, colour = "#FF3399", size = 2, shape = 19) +  # Midden locations (pink)
+    geom_point(data = point_location, aes(x = longitude, y = latitude), color = "purple", size = 1) +  # Purple reference dot
+    coord_sf(xlim = c(112, 150), ylim = c(-40, -10)) +  # Crop to 10°S–40°S latitude, 110°E–150°E longitude
     ggtitle(bquote(italic("Leporillus apicalis") * " SDM with Middens — Years BP: " * .(current_year_bp)))
- 
-    theme_minimal() +
-    theme(
-      plot.background = element_rect(fill = "white"),
-      panel.background = element_rect(fill = "grey95"),
-      panel.grid = element_line(colour = "white")
-    )
 
-  # Save plot
+  # Save the plot to a folder with filenames indicating the year BP
   ggsave(
     filename = paste0(
       "C:/github/SNR_SDM/Results/stratified enviromental sampling/apicalis/midden maps/apicalis_middens_",
@@ -544,6 +609,7 @@ walk(seq_along(raster_timesteps), function(i) {
     height = 7
   )
 })
+
 
 ```
 # Calculate TSS 
