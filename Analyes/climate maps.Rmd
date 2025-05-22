@@ -10,34 +10,69 @@ This code creates 3 stacks of maps, one for each climate variable, at the same t
 It needs to be run in the same environment as the SDM scripts, after they have been run. 
 
 ```{r Climate variable maps}
-# Create a Stack of Maps for Each Climate Variable
+# Climate variable maps with readable labels and fixed plotting
+
+
 walk2(c("bio05", "bio06", "bio12"), 1:3, ~{
   var_name <- .x
   var_idx <- .y
-  
+
   # Create a folder for the variable if it doesn't exist
   dir.create(paste0("C:/github/SNR_SDM/Results/Climate_Maps/", var_name), showWarnings = FALSE)
 
   # Loop over 41 time steps (40ka in 1ka timesteps starting at 0)
   walk(760:800, function(timestep) {
-    year_bp <- time(climate_full[[1]])[timestep] - 1950  # Calculate years before present
-    
+    year_bp <- time(climate_full[[1]])[timestep] - 1950  # Years before present
+
     # Extract climate data for the variable and timestep
     climate_snapshot <- climate_full[[var_idx]][[timestep]]
     names(climate_snapshot) <- var_name  # Assign name to layer
-    
-    # Plot the map
-    p <- ggplot() +
-      geom_spatraster(data = climate_snapshot, aes(fill = !!sym(var_name))) +  # Map variable
-      scale_fill_terrain_c(name = var_name) +  # Add terrain scale
-      ggtitle(paste0("Krapp Climate Variable: ", var_name, " - Years BP: ", year_bp))
-    
-    # Save the plot
-    ggsave(filename = paste0("C:/github/SNR_SDM/Results/Climate_Maps/", var_name, "/",
-                             var_name, "_map_", year_bp, ".png"),
-           plot = p,
-           width = 7, height = 7)
+
+    # Convert raster to data frame for ggplot
+    df <- as.data.frame(climate_snapshot, xy = TRUE, na.rm = TRUE)
+
+    # Format label for title and legend
+    label <- case_when(
+      var_name == "bio05" ~ "Maximum Temperature",
+      var_name == "bio06" ~ "Minimum Temperature",
+      var_name == "bio12" ~ "Annual Precipitation"
+    )
+
+    # Plot
+    p <- ggplot(df, aes(x = x, y = y, fill = .data[[var_name]])) +
+      geom_tile() +
+      scale_fill_terrain_c(
+        name = case_when(
+          var_name == "bio05" ~ "Max\nTemp (°C)",
+          var_name == "bio06" ~ "Min\nTemp (°C)",
+          var_name == "bio12" ~ "Annual\nRainfall (mm)"
+        ),
+        oob = scales::squish
+      ) +
+      labs(
+        title = paste0(label, " – ", year_bp, " years BP"),
+        x = "Longitude", y = "Latitude"
+      ) +
+      coord_fixed() +
+      theme_classic(base_size = 12) +
+      theme(
+        panel.background = element_rect(fill = "white", colour = NA),
+        plot.background = element_rect(fill = "white", colour = NA)
+      )
+
+    # Save plot
+    ggsave(
+      filename = paste0("C:/github/SNR_SDM/Results/Climate_Maps/", var_name, "/", var_name, "_map_", year_bp, ".png"),
+      plot = p,
+      width = 7, height = 7
+    )
   })
 })
+
+# Save metadata explainer in the Climate_Maps folder
+plot_path <- "C:/github/SNR_SDM/Results/Climate_Maps/explainer.txt"
+assign("plot_path", plot_path, envir = .GlobalEnv)
+source("C:/github/create_explainer/create_explainer.R")
+
 
 ```

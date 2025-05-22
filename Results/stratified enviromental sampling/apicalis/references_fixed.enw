@@ -1,0 +1,326 @@
+%0 Computer Program
+%A Wilke, Claus O.
+%D 2024
+%T cowplot: Streamlined Plot Theme and Plot Annotations for 'ggplot2'
+%I CRAN
+%U https://CRAN.R-project.org/package=cowplot
+
+%0 Computer Program
+%A Garnier, 
+%A Simon, 
+%A Ross, 
+%A Noam, 
+%A Rudis, 
+%A Robert, 
+%A Camargo, 
+%A Pedro, Antônio
+%A Sciaini, 
+%A Marco, 
+%A Scherer, 
+%A Cédric, 
+%D 2024
+%T {viridis(Lite)} - Colorblind-Friendly Color Maps for R
+%I CRAN
+%U https://sjmgarnier.github.io/viridis/
+
+%0 Computer Program
+%A Garnier, 
+%A Simon, 
+%A Ross, 
+%A Noam, 
+%A Rudis, 
+%A Robert, 
+%A Camargo, 
+%A Pedro, Antônio
+%A Sciaini, 
+%A Marco, 
+%A Scherer, 
+%A Cédric, 
+%D 2023
+%T {viridis(Lite)} - Colorblind-Friendly Color Maps for R
+%I CRAN
+%U https://sjmgarnier.github.io/viridis/
+
+%0 Computer Program
+%A Da Re, Daniele
+%A Tordoni, Enrico
+%A Lenoir, Jonathan
+%A Lembrechts, Jonas
+%A Vanwambeke, Sophie
+%A Rocchini, Duccio
+%A Bazzichetto, Manuele
+%D 2023
+%T USE it: uniformly sampling pseudo-absences within the environmental space for applications in habitat suitability models
+%I CRAN
+%U https://doi.org/10.32942/X2XS32
+
+%0 Computer Program
+%A Hester, Jim
+%A Wickham, Hadley
+%A Csárdi, Gábor
+%D 2024
+%T fs: Cross-Platform File System Operations Based on 'libuv'
+%I CRAN
+%U https://CRAN.R-project.org/package=fs
+
+%0 Computer Program
+%A Warnes, Gregory R.
+%A Bolker, Ben
+%A Lumley, Thomas
+%A Magnusson, Arni
+%A Venables, Bill
+%A Ryodan, Genei
+%A Moeller, Steffen
+%D 2023
+%T gtools: Various R Programming Tools
+%I CRAN
+%U https://CRAN.R-project.org/package=gtools
+
+%0 Computer Program
+%A Hernangómez, Diego
+%D 2023
+%T Using the {tidyverse} with {terra} objects: the {tidyterra} package
+%I The Open Journal
+%U https://doi.org/10.21105/joss.05751
+
+%0 Computer Program
+%A Leonardi, Michela
+%A Colucci, Margherita
+%A Pozzi, Andrea
+%A Manica, Andrea
+%D 2024
+%T tidysdm: Species Distribution Models with Tidymodels
+%I CRAN
+%U https://CRAN.R-project.org/package=tidysdm
+
+%0 Computer Program
+%A Kuhn, Max
+%A Vaughan, Davis
+%A Hvitfeldt, Emil
+%D 2024
+%T yardstick: Tidy Characterizations of Model Performance
+%I CRAN
+%U https://CRAN.R-project.org/package=yardstick
+
+%0 Computer Program
+%A Kuhn, Max
+%A Couch, Simon
+%D 2024
+%T workflowsets: Create a Collection of 'tidymodels' Workflows
+%I CRAN
+%U https://CRAN.R-project.org/package=workflowsets
+
+%0 Computer Program
+%A Vaughan, Davis
+%A Couch, Simon
+%D 2024
+%T workflows: Modeling Workflows
+%I CRAN
+%U https://CRAN.R-project.org/package=workflows
+
+%0 Computer Program
+%A Kuhn, Max
+%D 2024
+%T tune: Tidy Tuning Tools
+%I CRAN
+%U https://CRAN.R-project.org/package=tune
+
+%0 Computer Program
+%A Müller, Kirill
+%A Wickham, Hadley
+%D 2023
+%T tibble: Simple Data Frames
+%I CRAN
+%U https://CRAN.R-project.org/package=tibble
+
+%0 Computer Program
+%A Kuhn, Max
+%A Wickham, Hadley
+%D 2020
+%T Tidymodels: a collection of packages for modeling and machine learning using tidyverse principles.
+%I CRAN
+%U https://www.tidymodels.org
+
+%0 Computer Program
+%A Wickham, Hadley
+%A Vaughan, Davis
+%A Girlich, Maximilian
+%D 2024
+%T tidyr: Tidy Messy Data
+%I CRAN
+%U https://CRAN.R-project.org/package=tidyr
+
+%0 Computer Program
+%A Pebesma, Edzer
+%A Bivand, Roger
+%D 2023
+%T {Spatial Data Science: With applications in R}
+%I {Chapman and Hall/CRC}
+%U https://r-spatial.org/book/
+
+%0 Computer Program
+%A Pebesma, Edzer
+%D 2018
+%T {Simple Features for R: Standardized Support for Spatial Vector Data}
+%I CRAN
+%U https://doi.org/10.32614/RJ-2018-009
+
+%0 Computer Program
+%A South, Andy
+%D 2011
+%T rworldmap: A New {R} package for Mapping Global Data
+%I CRAN
+%U https://journal.r-project.org/articles/RJ-2011-006/
+
+%0 Computer Program
+%A Pebesma, Edzer J.
+%A Bivand, Roger
+%D 2005
+%T Classes and methods for spatial data in {R}
+%I CRAN
+%U https://CRAN.R-project.org/doc/Rnews/
+
+%0 Computer Program
+%A Bivand, Roger S.
+%A Pebesma, Edzer
+%A Gomez-Rubio, Virgilio
+%D 2013
+%T Applied spatial data analysis with {R}, Second edition
+%I Springer, NY
+%U https://asdar-book.org/
+
+%0 Computer Program
+%A Frick, Hannah
+%A Chow, Fanny
+%A Kuhn, Max
+%A Mahoney, Michael
+%A Silge, Julia
+%A Wickham, Hadley
+%D 2024
+%T rsample: General Resampling Infrastructure
+%I CRAN
+%U https://CRAN.R-project.org/package=rsample
+
+%0 Computer Program
+%A Kuhn, Max
+%A Wickham, Hadley
+%A Hvitfeldt, Emil
+%D 2024
+%T recipes: Preprocessing and Feature Engineering Steps for Modeling
+%I CRAN
+%U https://CRAN.R-project.org/package=recipes
+
+%0 Computer Program
+%A Wickham, Hadley
+%A Hester, Jim
+%A Bryan, Jennifer
+%D 2024
+%T readr: Read Rectangular Text Data
+%I CRAN
+%U https://CRAN.R-project.org/package=readr
+
+%0 Computer Program
+%A Wickham, Hadley
+%A Henry, Lionel
+%D 2023
+%T purrr: Functional Programming Tools
+%I CRAN
+%U https://CRAN.R-project.org/package=purrr
+
+%0 Computer Program
+%A Hijmans, Robert J.
+%D 2024
+%T terra: Spatial Data Analysis
+%I CRAN
+%U https://CRAN.R-project.org/package=terra
+
+%0 Computer Program
+%A Kuhn, Max
+%A Vaughan, Davis
+%D 2024
+%T parsnip: A Common API to Modeling and Analysis Functions
+%I CRAN
+%U https://CRAN.R-project.org/package=parsnip
+
+%0 Computer Program
+%A Venables, Bill
+%A Hornik, Kurt
+%D 2023
+%T oz: Plot the Australian Coastline and States
+%I CRAN
+%U https://CRAN.R-project.org/package=oz
+
+%0 Computer Program
+%A Kuhn, Max
+%D 2024
+%T modeldata: Data Sets Useful for Modeling Examples
+%I CRAN
+%U https://CRAN.R-project.org/package=modeldata
+
+%0 Computer Program
+%A Wickham, Hadley
+%D 2016
+%T ggplot2: Elegant Graphics for Data Analysis
+%I Springer-Verlag New York
+%U https://ggplot2.tidyverse.org
+
+%0 Computer Program
+%A Wickham, Hadley
+%A François, Romain
+%A Henry, Lionel
+%A Müller, Kirill
+%A Vaughan, Davis
+%D 2023
+%T dplyr: A Grammar of Data Manipulation
+%I CRAN
+%U https://CRAN.R-project.org/package=dplyr
+
+%0 Computer Program
+%A Kuhn, Max
+%A Frick, Hannah
+%D 2024
+%T dials: Tools for Creating Tuning Parameter Values
+%I CRAN
+%U https://CRAN.R-project.org/package=dials
+
+%0 Computer Program
+%A Wickham, Hadley
+%A Pedersen, Thomas Lin
+%A Seidel, Dana
+%D 2023
+%T scales: Scale Functions for Visualization
+%I CRAN
+%U https://CRAN.R-project.org/package=scales
+
+%0 Computer Program
+%A Biecek, Przemyslaw
+%D 2018
+%T DALEX: Explainers for Complex Predictive Models in R
+%I CRAN
+%U https://jmlr.org/papers/v19/18-416.html
+
+%0 Computer Program
+%A Fox, John
+%A Weisberg, Sanford
+%D 2019
+%T An {R} Companion to Applied Regression
+%I Sage
+%U https://www.john-fox.ca/Companion/
+
+%0 Computer Program
+%A Fox, John
+%A Weisberg, Sanford
+%A Price, Brad
+%D 2022
+%T carData: Companion to Applied Regression Data Sets
+%I CRAN
+%U https://CRAN.R-project.org/package=carData
+
+%0 Computer Program
+%A Robinson, David
+%A Hayes, Alex
+%A Couch, Simon
+%D 2024
+%T broom: Convert Statistical Objects into Tidy Tibbles
+%I CRAN
+%U https://CRAN.R-project.org/package=broom

@@ -10,14 +10,18 @@ output: html_document
 
 ```{r install_libraries, message=FALSE, warning=FALSE}
 
+knitr::opts_knit$set(root.dir = "C:/github/SNR_SDM/Results")
+
+
 # List of packages to check, install if needed, and load
 packages <- c(
   "broom", "car", "DALEX", "dials", "dplyr", "ggplot2", "infer", 
-  "modeldata", "oz", "parsnip", "pastclim", "purrr", "readr", 
-  "recipes", "rsample", "rworldmap", "sf", "tidyr", "tidymodels", 
-  "tidysdm", "tidyterra", "tibble", "tune", "terra", "workflows", 
-  "workflowsets", "gtools", "fs", "USE"
+  "modeldata", "oz", "parsnip", "pastclim", "patchwork", "purrr", 
+  "readr", "recipes", "rsample", "rworldmap", "sf", "tidyr", 
+  "tidymodels", "tidysdm", "tidyterra", "tibble", "tune", "terra", 
+  "workflows", "workflowsets", "gtools", "fs", "USE", "viridis"
 )
+
 
 # Function to display a cat message
 cat_message <- function(pkg, message_type) {
@@ -82,13 +86,30 @@ library(gtools)
 library(fs)
 library(dplyr)
 library(USE)
+library(cowplot)
+
 ```
 
 # Set the working directory
 
 ```{r Set the working directory}
+
 # Set the working directory to the processed data folder
-knitr::opts_knit$set(root.dir =("C:/github/SNR_SDM/Data/processed"))
+knitr::opts_knit$set(root.dir = "C:/github/SNR_SDM/Data/processed")
+
+# Define the output directory for results
+results_dir <- "C:/github/SNR_SDM/Results/stratified enviromental sampling/apicalis"
+dir.create(results_dir, showWarnings = FALSE, recursive = TRUE)
+
+# Define explainer output path (overwritten by future runs)
+plot_path <- file.path(results_dir, "explainer.txt")
+
+# Make plot_path available to the explainer script
+assign("plot_path", plot_path, envir = .GlobalEnv)
+
+# Run the explainer script
+source("C:/github/create_explainer/create_explainer.R")
+
 ```
 
 # Preparing your data
@@ -106,8 +127,8 @@ pastclim::download_dataset("Krapp2021")
 # Set working directory to the processed data folder
 setwd("C:/github/SNR_SDM/Data/processed")
 
-# Read in the 'apicalis.csv' file, print its contents, convert to an sf object, and set the CRS
-apicalis <- read_csv("apicalis.csv") %>%
+# Read in the 'apicalis_flat.csv' file, print its contents, convert to an sf object, and set the CRS
+apicalis <- read_csv("apicalis_flat.csv") %>%
   {print(.); .} %>%  # Print the data to check its contents
   st_as_sf(coords = c("longitude", "latitude")) %>%  # Convert to a simple features (sf) object using latitude and longitude
   st_set_crs(4326)  # Set the Coordinate Reference System (CRS) to EPSG:4326 (GDA2020)
@@ -120,6 +141,8 @@ apicalis <- read_csv("apicalis.csv") %>%
 ```{r}
 # Define an extent object for Australia using specific longitude (X) and latitude (Y) coordinates
 Aust_extent <- terra::ext(110, 152.5, -42.5, -7.5)
+
+
 ```
 
 ### Krapp2021 Land Mask
@@ -208,7 +231,7 @@ env_space_1950 <- c(climate_full[[1]][[800]], climate_full[[2]][[800]],
 
 
 ```{r Pseudo absence sampling}
-
+library(scales)  # for alpha()
 apicalis3 <- paSampling(
   env.rast = env_space_1950,
   pres = apicalis %>% filter(time_bp == -300),
@@ -217,43 +240,74 @@ apicalis3 <- paSampling(
   grid.res = 9 # calculated in optimisation step above, but entered manually 
 ) |> st_drop_geometry()
 
+
+
+
+
 # Load world map and convert to sf object
 world_map <- rworldmap::getMap(resolution = "high")
-land_outline <- sf::st_as_sf(world_map)  # Do not filter, keeping all land
+australia_outline <- sf::st_as_sf(world_map)  # Do not filter, keeping all land
 
 
 
-# Define the plot
-ggplot() +
-  geom_sf(data = australia_outline, fill = "#F9E3D9", color = "#F1CFCF") +  # Use proper landmass outline
-  
-  # Pseudo-absences (circles) with thin black outline
-  geom_point(data = apicalis3, aes(x, y, color = "Pseudo Absence", shape = "Pseudo Absence"), 
-             size = 2, stroke = 0) +  
-  
-  # Presences (triangles) with thin black outline
-  geom_sf(data = apicalis |> filter(time_bp == -300), aes(color = "Presence", shape = "Presence"), 
-          size = 2, stroke = 0) +  
-  
-  scale_color_manual(values = c("Presence" = "#D689FF", "Pseudo Absence" = "#00D19B")) +  # Define colors
-  scale_shape_manual(values = c("Presence" = 17, "Pseudo Absence" = 16)) +  # Triangles (17) for Presence, Circles (16) for Pseudo Absence
-  
+pseudoabsence_map <- ggplot() +
+  geom_sf(data = australia_outline, 
+          fill = alpha("#C4C4C4", 0.5), colour = "grey50") +
+
+  # Pseudo Absences (circle with border)
+  geom_point(data = apicalis3, 
+             aes(x, y, shape = "Pseudo Absence", fill = "Pseudo Absence"), 
+             colour = "black", size = 2.5, stroke = 0.3) +
+
+  # Presences (triangle with border)
+  geom_sf(data = apicalis |> filter(time_bp == -300), 
+          aes(fill = "Presence", shape = "Presence"), 
+          colour = "black", size = 2.5, stroke = 0.3) +
+
+  # Manual shape and colour
+  scale_fill_manual(
+    values = c("Presence" = "#A100FA", "Pseudo Absence" = "#FF7E1D"),
+    name = "Legend"
+  ) +
+  scale_shape_manual(
+    values = c("Presence" = 24, "Pseudo Absence" = 21),
+    name = "Legend"
+  ) +
+
+  # Set spatial limits and grid breaks
+  coord_sf(
+    xlim = c(110, 155),
+    ylim = c(-45, -10),
+    expand = FALSE,
+    default_crs = NULL
+  ) +
+  scale_x_continuous(breaks = seq(110, 155, by = 5)) +
+  scale_y_continuous(breaks = seq(-45, -10, by = 5)) +
+
+  # Labels and theme
   labs(
     title = "Pseudo Absences in Environmental Space",
     x = "Longitude",
-    y = "Latitude",
-    color = "Legend",
-    shape = "Legend"  # Ensure legend applies to both color & shape
+    y = "Latitude"
   ) +
-  coord_sf(xlim = c(110, 150), ylim = c(-40, -10)) +  # Crop correctly
-  theme_minimal() +
+  theme_minimal(base_size = 12) +
   theme(
-    panel.background = element_rect(fill = "#DCF3FC", color = NA),  # Background color for map
-    plot.background = element_rect(fill = "white", color = NA),  # Keep plot background white
-    panel.grid.major = element_line(color = "white"),  # White major gridlines
-    panel.grid.minor = element_line(color = "white")   # White minor gridlines
+    plot.background = element_rect(fill = "white", colour = NA),
+    panel.background = element_rect(fill = "#F2F2F2", colour = NA),
+    panel.grid.major = element_line(colour = "#C4C4C4", linewidth = 0.3),
+    panel.grid.minor = element_line(colour = "#C4C4C4", linewidth = 0.2),
+    panel.border = element_rect(colour = "#C4C4C4", fill = NA, linewidth = 0.3)
   )
 
+# Save the output
+ggsave(
+  filename = "C:/github/SNR_SDM/Results/stratified enviromental sampling/apicalis/pseudo_absences_envspace.png",
+  plot = pseudoabsence_map,
+  width = 6,
+  height = 5,
+  dpi = 300,
+  bg = "white"
+)
 
 
 
@@ -353,14 +407,169 @@ apicalis_models <- apicalis_models %>%
 ## Create an Ensemble Model
 
 ```{r ensemble}
-# Create an ensemble by selecting the best set of parameters for each model
-# tss_max will be used as the metric for selecting the best random forest and boosted tree models
+library(ggplot2)
 apicalis_ensemble <- simple_ensemble() %>%
   add_member(apicalis_models, metric = "boyce_cont")  # Add members to the ensemble using tss_max as the metric
 
-autoplot(apicalis_ensemble)  # Plot the ensemble model performance
-```
 
+# Label maps
+workflow_labels <- c(
+  default_gam = "GAM",
+  default_gbm = "Boosted Tree",
+  default_glm = "GLM",
+  default_rf  = "Random Forest"
+)
+
+metric_labels <- c(
+  boyce_cont = "Boyce Index",
+  roc_auc = "Area Under Curve (AUC)",
+  tss_max = "True Skill Statistic (TSS)"
+)
+
+
+model_colours <- c(
+default_gam = "#FF61C3",     
+      default_gbm = "#00B140",
+      default_glm = "#00BFFF",
+      default_rf  = "#BC43FF"
+)
+
+model_shapes <- c(
+  default_gam = 16,
+  default_gbm = 17,
+  default_glm = 15,
+  default_rf  = 3
+)
+
+# Final plot
+autoplot(apicalis_ensemble) +
+  scale_color_manual(
+    name = "Model Type",
+    values = model_colours,
+    labels = workflow_labels
+  ) +
+  scale_shape_manual(
+    name = "Model Type",
+    values = model_shapes,
+    labels = workflow_labels
+  ) +
+   labs(
+    title = "Ensemble Model Performance Across Algorithms",
+    x = "Fold",
+    y = "Performance Metric"
+  ) +
+  theme_minimal(base_size = 12) +
+  theme(
+    panel.background = element_rect(fill = "white", colour = NA),
+    plot.background = element_rect(fill = "white", colour = NA),
+    panel.grid.major = element_line(colour = "grey90"),
+    panel.grid.minor = element_blank(),
+    plot.title = element_text(face = "bold", size = 13),
+    legend.position = "bottom",          # <-- horizontal layout
+    legend.direction = "horizontal",
+    legend.title = element_text(size = 11),
+    legend.text = element_text(size = 10)
+  )
+
+
+
+
+```
+```{r}
+library(purrr)
+library(dplyr)
+library(ggplot2)
+library(tidyr)
+
+# 1. Define your model and metric labels
+workflow_labels <- c(
+  default_gam = "Generalised Additive Model",
+  default_gbm = "Boosted Tree",
+  default_glm = "Generalised Linear Model",
+  default_rf  = "Random Forest"
+)
+
+model_order <- c(
+  "Generalised Additive Model",
+  "Boosted Tree",
+  "Generalised Linear Model",
+  "Random Forest"
+)
+
+metric_labels <- c(
+  boyce_cont = "Boyce Index",
+  roc_auc = "AUC",
+  tss_max = "TSS"
+)
+
+colour_map <- c(
+  "Generalised Additive Model" = "#FF61C3",
+  "Boosted Tree"               = "#00B140",
+  "Generalised Linear Model"   = "#00BFFF",
+  "Random Forest"              = "#BC43FF"
+)
+
+# 2. Extract fold-level performance from tuned models
+perf_data <- apicalis_models %>%
+  mutate(metrics = map(result, collect_metrics, summarize = FALSE)) %>%
+  select(wflow_id, metrics) %>%
+  unnest(metrics)
+
+# 3. Clean and label the data
+perf_data_clean <- perf_data %>%
+  filter(.metric %in% names(metric_labels)) %>%
+  mutate(
+    model = factor(workflow_labels[wflow_id], levels = model_order),
+    metric_label = factor(metric_labels[.metric], levels = c("Boyce Index", "AUC", "TSS"))
+  )
+
+# 4. Plot using boxplot and jitter
+ggplot(perf_data_clean, aes(x = model, y = .estimate, fill = model)) +
+  geom_boxplot(width = 0.6, alpha = 0.9, outlier.shape = NA) +
+  geom_jitter(
+    aes(colour = model),
+    size = 1.3,
+    width = 0.15,
+    alpha = 0.4,
+    stroke = 0.3,
+    shape = 21
+  ) +
+  scale_fill_manual(values = colour_map, name = "Model Type") +
+  scale_colour_manual(values = rep("black", length(model_order)), guide = "none") +
+  facet_wrap(~ metric_label, scales = "free_y") +
+  labs(
+    title = "Model Performance Across Algorithms (Fold-Level)",
+    x = NULL,
+    y = "Performance Metric"
+  ) +
+  theme_minimal(base_size = 12) +
+  theme(
+    panel.background = element_rect(fill = "#EEEEEE", colour = NA),
+    plot.background = element_rect(fill = "white", colour = NA),
+    panel.grid.major = element_line(colour = "white"),
+    panel.grid.minor = element_blank(),
+    axis.text.x = element_blank(),
+    axis.ticks.x = element_blank(),
+    legend.position = "right",
+    legend.direction = "vertical",
+    legend.title = element_text(size = 11),
+    legend.text = element_text(size = 10),
+    plot.title = element_text(face = "bold", size = 13),
+    strip.text = element_text(margin = margin(b = 5))
+  )
+
+
+# 6. Save and generate metadata
+ggsave("C:/github/SNR_SDM/Results/stratified enviromental sampling/apicalis/ensemble/ensemble_performance_clean.png",
+       width = 8, height = 5, dpi = 300)
+
+plot_path <- "C:/github/SNR_SDM/Results/stratified enviromental sampling/apicalis/ensemble/ensemble_performance_clean.png"
+
+
+# Add metadata
+source("C:/github/create_explainer/create_explainer.R")
+
+```
 # Projecting to other times
 
 ## Make Predictions for the Last Glacial Maximum (LGM)
@@ -377,11 +586,11 @@ names(climate_lgm) <- c("bio05", "bio06", "bio12")  # Rename the layers to match
 
 ```{r predict lgm}
 # Use the ensemble model to predict species occurrence probabilities for the Last Glacial Maximum (LGM)
-prediction_lgm <- predict_raster(apicalis_ensemble, climate_lgm)  # Predict LGM probabilities
+apicalis_prediction_lgm <- predict_raster(apicalis_ensemble, climate_lgm)  # Predict LGM probabilities
 
 # Plot the predicted probabilities using ggplot2
 ggplot() +
-  geom_spatraster(data = prediction_lgm, aes(fill = mean)) +  # Add the prediction raster to the plot
+  geom_spatraster(data = apicalis_prediction_lgm, aes(fill = mean)) +  # Add the prediction raster to the plot
   scale_fill_terrain_c(name = "Probability\nof occurrence")  # Use a terrain color scale to show probabilities
 
 
@@ -398,7 +607,7 @@ point_location <- data.frame(
 
 # Plot the predicted probabilities with an Australia outline and the red dot
 ggplot() +
-  geom_spatraster(data = prediction_lgm, aes(fill = mean)) +  # Add the prediction raster
+  geom_spatraster(data = apicalis_prediction_lgm, aes(fill = mean)) +  # Add the prediction raster
   scale_fill_terrain_c(name = "Probability\nof occurrence") +  # Use a terrain color scale
   geom_sf(data = australia_outline, fill = NA, color = "black", linewidth = 0.6) +  # Add black outline
   geom_point(data = point_location, aes(x = longitude, y = latitude), color = "red", size = 1) +  # Add red dot
@@ -429,13 +638,13 @@ walk(760:800, function(timestep) {
   names(climate_snapshot) <- c("bio05", "bio06", "bio12")  # Rename layers to match the climate variables
 
   # Predict species occurrence for the current climate snapshot
-  prediction_raster <- predict_raster(apicalis_ensemble, climate_snapshot)
+  apicalis_prediction_raster <- predict_raster(apicalis_ensemble, climate_snapshot)
   
   # Stack the prediction raster along the z-axis
   apicalis_spatrast <<- if (is.null(apicalis_spatrast)) {
-    prediction_raster
+    apicalis_prediction_raster
   } else {
-    c(apicalis_spatrast, prediction_raster)
+    c(apicalis_spatrast, apicalis_prediction_raster)
   }
 })
 
@@ -447,44 +656,287 @@ output_file <- "C:/github/SNR_SDM/Results/stratified enviromental sampling/apica
 writeRaster(apicalis_spatrast, filename = output_file, overwrite = TRUE)
 ```
 
-## Create a Stack of Predictions and Plot for All Time Steps
+## stack o maps
 
 ```{r stack o maps}
+library(magick)
+
 # Load world map data and filter for Australia
 world_map <- rworldmap::getMap(resolution = "high")
 australia_outline <- sf::st_as_sf(world_map) %>%
   dplyr::filter(ADMIN == "Australia")  # Keep only Australia
 
-# Loop over 40 time steps (40ka in 1ka timesteps) to create and save a map of predictions for each time step
+# Loop over 40 time steps (40 ka in 1 ka timesteps)
 walk(760:800, function(timestep) {
-  year_bp <- time(climate_full[[1]])[timestep] - 1950  # Calculate years before present for each timestep
-  
-  # Create a climate snapshot for the current timestep
-  climate_snapshot <- rast(list(climate_full[[1]][[timestep]], 
-                                climate_full[[2]][[timestep]], 
-                                climate_full[[3]][[timestep]]))
-  names(climate_snapshot) <- c("bio05", "bio06", "bio12")  # Rename layers to match the climate variables
+  year_bp <- time(climate_full[[1]])[timestep] - 1950  # Calculate years before present
 
-  # Predict species occurrence for the current climate snapshot
-  prediction1 <- predict_raster(apicalis_ensemble, climate_snapshot)
+  # Create climate snapshot
+  climate_snapshot <- rast(list(
+    climate_full[[1]][[timestep]], 
+    climate_full[[2]][[timestep]], 
+    climate_full[[3]][[timestep]]
+  ))
+  names(climate_snapshot) <- c("bio05", "bio06", "bio12")
 
-  # Plot the predictions using ggplot2
+  # Predict suitability
+  apicalis_prediction1 <- predict_raster(apicalis_ensemble, climate_snapshot)
+
+  # Create plot
   p <- ggplot() +
-    geom_spatraster(data = prediction1, aes(fill = mean)) +  # Add the prediction raster
-    scale_fill_terrain_c(name = "Probability\nof occurrence") +  # Use a terrain color scale
-    geom_sf(data = australia_outline, fill = NA, color = "black", linewidth = 0.6) +  # Add black Australia outline
-    coord_sf(xlim = c(112, 150), ylim = c(-40, -10)) +  # Crop to 10°S–40°S latitude, 110°E–150°E longitude
-    ggtitle(bquote("Predicted distribution of " * italic("Leporillus apicalis") * " (Krapp2021)  Years BP: " * .(year_bp)))
+    geom_spatraster(data = apicalis_prediction1, aes(fill = mean)) +
+    scale_fill_terrain_c(name = "Probability\nof occurrence") +
+    geom_sf(data = australia_outline, fill = NA, color = "grey20", linewidth = 0.3) +
+    coord_sf(xlim = c(112, 150), ylim = c(-40, -10)) +
+    ggtitle(bquote(italic("Leporillus apicalis") * " — Years BP: " * .(year_bp))) +
+    theme_minimal() +
+    theme(
+   plot.background = element_rect(fill = "white", colour = NA),     
+  panel.background = element_rect(fill = "#F2F2F2", colour = NA),
+  panel.grid.major = element_line(colour = "#C4C4C4"),
+  panel.grid.minor = element_line(colour = "#C4C4C4"),
+      plot.margin = margin(0, 0, 0, 0, unit = "pt")
+    )
 
-  # Save the plot to a folder with filenames indicating the year BP
-  ggsave(filename = paste0("C:/github/SNR_SDM/Results/stratified enviromental sampling/apicalis/model/apicalis_map_",
-                           year_bp, ".png"),
-         plot = p,
-         width = 7, height = 7)
+  # Define output path
+  plot_path <- paste0(
+    "C:/github/SNR_SDM/Results/stratified enviromental sampling/apicalis/model/apicalis_map_",
+    year_bp, ".png"
+  )
+
+  # Save PNG
+  ggsave(
+    filename = plot_path,
+    plot = p,
+    width = 7,
+    height = 7,
+    dpi = 300,
+    bg = "transparent"
+  )
+  
+  assign("plot_path", plot_path, envir = .GlobalEnv)
+source("C:/github/create_explainer/create_explainer.R")
+
+  # Trim and add white border
+  img <- image_read(plot_path)
+  img_trimmed <- image_trim(img)
+  img_bordered <- image_border(img_trimmed, color = "white", geometry = "30x30")
+  image_write(img_bordered, path = plot_path)
 })
+
+
+
 
 ```
 
+```{r 6 image panel}
+library(ggplot2)
+library(patchwork)
+library(terra)
+library(purrr)
+library(dplyr)
+
+# Extract raster time steps
+raster_times <- terra::time(apicalis_spatrast)
+
+# Define target slices
+target_times <- c(-40000, -26000, -21000, -12000, -6000, 0)
+matched_indices <- match(target_times, raster_times)
+panel_tags <- letters[1:length(target_times)]
+
+# Define colours
+bg_colour <- "#DCF3FC"
+outline_colour <- "black"
+
+# Create each panel (no middens)
+panel_plots <- pmap(
+  list(idx = matched_indices, year = target_times, tag = panel_tags),
+  function(idx, year_bp, tag_label) {
+    current_prediction <- apicalis_spatrast[[idx]]
+
+    ggplot() +
+      geom_spatraster(data = current_prediction, aes(fill = mean)) +
+      scale_fill_terrain_c(name = "Probability\nof occurrence", limits = c(0, 1)) +
+      geom_sf(data = australia_outline, fill = NA, colour = "grey20", linewidth = 0.3) +
+      coord_sf(xlim = c(112, 150), ylim = c(-40, -10)) +
+      scale_y_continuous(breaks = seq(-40, -10, by = 4)) +
+      scale_x_continuous(breaks = seq(112, 150, by = 8)) +
+      ggtitle(bquote("(" * .(tag_label) * ")  Years BP: " * .(year_bp))) +
+      theme_minimal(base_size = 10) +
+      theme(
+        panel.background = element_rect(fill = bg_colour, colour = NA),
+        plot.background = element_rect(fill = "white", colour = NA),
+        panel.grid.major = element_line(colour = "white"),
+        panel.grid.minor = element_blank(),
+        axis.text = element_text(size = 8),
+        axis.title = element_blank(),
+        plot.margin = margin(2, 2, 2, 2),
+        legend.position = "right",
+        legend.title = element_text(size = 11),
+        legend.text = element_text(size = 11)
+      ) +
+      guides(
+        fill = guide_colourbar(
+          title.theme = element_text(size = 11),
+          label.theme = element_text(size = 11)
+        )
+      )
+  }
+)
+
+# Combine into multi-panel figure
+final_panel <- wrap_plots(panel_plots, ncol = 2, guides = "collect") +
+  plot_annotation(
+    title = expression(italic("Leporillus apicalis") * " SDM model predictions"),
+    theme = theme(
+      plot.title = element_text(size = 14, face = "bold", hjust = 0.5)
+    )
+  )
+
+# Save the panel
+ggsave("C:/github/SNR_SDM/Results/stratified enviromental sampling/apicalis/apicalis_model_panel.png",
+       plot = final_panel, width = 10, height = 9, dpi = 300)
+
+```
+
+
+
+##Centroid
+```{r}
+# Calculate suitability-weighted centroid for each timestep in apicalis_spatrast
+
+apicalis_centroids <- lapply(1:nlyr(apicalis_spatrast), function(i) {
+  r <- apicalis_spatrast[[i]]
+
+  # Extract suitability values and matching coordinates (including NAs)
+  vals <- terra::values(r)[, 1]
+  coords <- terra::crds(r, na.rm = FALSE)
+
+  # Filter to cells with non-NA and positive suitability values
+  valid <- !is.na(vals) & vals > 0
+  if (sum(valid) == 0) return(NULL)  # Skip if no valid cells
+
+  weights <- vals[valid]
+  coords <- coords[valid, ]
+
+  # Calculate weighted centroid
+  centroid_x <- sum(coords[, 1] * weights) / sum(weights)
+  centroid_y <- sum(coords[, 2] * weights) / sum(weights)
+
+  data.frame(
+    time_bp = time(apicalis_spatrast)[i],
+    longitude = centroid_x,
+    latitude = centroid_y
+  )
+}) %>% bind_rows()
+
+
+# Rainbow colours: red = recent, violet = old
+viridis_colours <- viridis(41, option = "H")
+
+
+
+ggplot(apicalis_centroids, aes(x = longitude, y = latitude)) +
+  geom_path(colour = "grey50", linewidth = 1) +
+  geom_point(aes(colour = time_bp), size = 2) +
+ scale_colour_gradientn(
+  colours = viridis_colours,
+  name = "Years BP",
+  limits = c(-40000, 0),
+  breaks = c(-40000, -30000, -20000, -10000, 0),
+  labels = c("40k", "30k", "20k", "10k", "0")
+) +
+  coord_fixed(xlim = c(129, 131), ylim = c(-28, -24.8)) +  # Consistent extent
+  labs(
+    title = "Centroid shift of predicted apicalis habitat through time",
+    x = "Longitude", y = "Latitude"
+  ) +
+  theme_minimal(base_size = 11) +
+   theme(
+    plot.background = element_rect(fill = "white", colour = NA),
+    panel.background = element_rect(fill = "#F2F2F2", colour = NA),
+    panel.grid.major = element_line(colour = "#C4C4C4", linewidth = 0.3),
+    panel.grid.minor = element_line(colour = "#C4C4C4", linewidth = 0.2),
+    panel.border = element_rect(colour = "#C4C4C4", fill = NA, linewidth = 0.3)
+  )
+
+
+# Save output with clean background
+ggsave(
+  filename = "C:/github/SNR_SDM/Results/stratified enviromental sampling/apicalis/apicalis_centroid_shift_plot.png",
+  plot = last_plot(),
+  width = 6, height = 6, dpi = 300,
+  bg = "white"
+)
+
+# Identify the timestep with the northernmost centroid
+northernmost <- apicalis_centroids %>% filter(latitude == max(latitude))
+print(northernmost)
+
+```
+```{r}
+# Load geosphere if not already loaded
+if (!requireNamespace("geosphere", quietly = TRUE)) {
+  install.packages("geosphere")
+}
+library(geosphere)
+library(dplyr)
+library(ggplot2)
+
+# Ensure apicalis_centroids are ordered by time (from oldest to most recent)
+apicalis_centroids <- apicalis_centroids %>%
+  arrange(desc(time_bp)) %>%
+  mutate(
+    lead_lon = lead(longitude),
+    lead_lat = lead(latitude),
+    azimuth = geosphere::bearing(cbind(longitude, latitude), cbind(lead_lon, lead_lat)),
+    shift_km = geosphere::distGeo(cbind(longitude, latitude), cbind(lead_lon, lead_lat)) / 1000,
+    time_diff = lead(time_bp) - time_bp,
+    rate_kmpky = shift_km / (abs(time_diff) / 1000)
+  )
+
+# Remove last row with NA values
+apicalis_centroids_summary <- apicalis_centroids %>% filter(!is.na(shift_km))
+
+# Stepwise summary stats
+total_shift <- sum(apicalis_centroids_summary$shift_km)
+mean_rate <- mean(apicalis_centroids_summary$rate_kmpky)
+
+# Compute net azimuth from first to last centroid
+start_point <- c(apicalis_centroids$longitude[nrow(apicalis_centroids)], apicalis_centroids$latitude[nrow(apicalis_centroids)])
+end_point <- c(apicalis_centroids$longitude[1], apicalis_centroids$latitude[1])
+net_azimuth <- geosphere::bearing(start_point, end_point) %% 360
+
+# Helper function: convert azimuth to compass direction
+get_compass_direction <- function(azimuth_deg) {
+  directions <- c("N", "NE", "E", "SE", "S", "SW", "W", "NW", "N")
+  breaks <- seq(-22.5, 360, by = 45)
+  azimuth_deg <- azimuth_deg %% 360
+  direction <- directions[findInterval(azimuth_deg, breaks, rightmost.closed = TRUE)]
+  return(direction)
+}
+net_direction <- get_compass_direction(net_azimuth)
+
+# Print summary
+cat("Total shift:", round(total_shift, 1), "km\n")
+cat("Average shift per 1,000 years:", round(mean_rate, 2), "km\n")
+cat("Net direction of centroid movement:", round(net_azimuth, 1), "degrees (", net_direction, ")\n")
+
+# Optional: plot histogram of stepwise azimuths
+ggplot(apicalis_centroids_summary, aes(x = azimuth %% 360)) +
+  geom_histogram(binwidth = 15, fill = "#4682B4", colour = "white") +
+  coord_polar(start = -pi/2) +
+  scale_x_continuous(breaks = seq(0, 360, by = 45)) +
+  labs(
+    title = "Stepwise azimuths of range shift",
+    x = "Direction (degrees from north)",
+    y = "Frequency"
+  ) +
+  theme_minimal()
+
+
+
+
+```
 # **Model ends here.**
 
 # Additional steps for validation and analysis
@@ -560,56 +1012,173 @@ print(organized_data)
 
 ```
 ```{r plot middens}
-install.packages("rworldxtra")
 library(rworldxtra)
+
 # Load world map data and filter for Australia
 world_map <- rworldmap::getMap(resolution = "high")
 australia_outline <- sf::st_as_sf(world_map) %>%
   dplyr::filter(ADMIN == "Australia")  # Keep only Australia
 
-# Define the point location (convert to a data frame for ggplot)
-point_location <- data.frame(
-  longitude = 118.965510,
-  latitude = -24.270740  # South is negative in latitude
-)
-
 # Extract raster timesteps
 raster_timesteps <- time(apicalis_spatrast)
 
-# Loop through each timestep in your stacked raster predictions
+# Loop through each timestep
 walk(seq_along(raster_timesteps), function(i) {
-  
   current_year_bp <- raster_timesteps[i]
 
-  # Filter middens relevant to the current raster timestep (rounded to nearest 1000 years)
+  # Filter middens within ±500 years of the timestep
   current_middens <- middens_sf %>%
-    filter(abs(time_bp - current_year_bp) <= 500) # within ±500 years of raster timestep
+    filter(abs(time_bp - current_year_bp) <= 500)
 
-  # Get the raster layer for the current timestep
+  # Get prediction layer
   current_prediction <- apicalis_spatrast[[i]]
 
-  # Plot SDM prediction with midden points overlayed and purple reference dot
+  # Create plot
   p <- ggplot() +
-    geom_spatraster(data = current_prediction, aes(fill = mean)) +  # Add the prediction raster
-    scale_fill_terrain_c(name = "Probability\nof occurrence") +  # Use a terrain color scale
-    geom_sf(data = australia_outline, fill = NA, color = "black", linewidth = 0.6) +  # Add black Australia outline
-    geom_sf(data = current_middens, colour = "#FF3399", size = 2, shape = 19) +  # Midden locations (pink)
-    geom_point(data = point_location, aes(x = longitude, y = latitude), color = "purple", size = 1) +  # Purple reference dot
-    coord_sf(xlim = c(112, 150), ylim = c(-40, -10)) +  # Crop to 10°S–40°S latitude, 110°E–150°E longitude
-    ggtitle(bquote(italic("Leporillus apicalis") * " SDM with Middens — Years BP: " * .(current_year_bp)))
+    geom_spatraster(data = current_prediction, aes(fill = mean)) +
+    scale_fill_terrain_c(name = "Probability\nof occurrence") +
+    geom_sf(data = australia_outline, fill = NA, color = "black", linewidth = 0.6) +
+    geom_sf(data = current_middens, shape = 21, fill = "#FF3399", colour = "black", size = 2, stroke = 0.4)  +    coord_sf(xlim = c(112, 150), ylim = c(-40, -10)) +
+    ggtitle(bquote(italic("Leporillus apicalis") * " SDM with Middens — Years BP: " * .(current_year_bp))) +
+    theme_minimal(base_size = 11) +
+theme(
+  plot.background = element_rect(fill = "white", colour = NA),     
+  panel.background = element_rect(fill = "#F2F2F2", colour = NA),
+  panel.grid.major = element_line(colour = "#C4C4C4"),
+  panel.grid.minor = element_line(colour = "#C4C4C4"),
+  plot.margin = margin(0, 0, 0, 0, "pt")
+    )
 
-  # Save the plot to a folder with filenames indicating the year BP
+  # Define save path
+  plot_path <- paste0(
+    "C:/github/SNR_SDM/Results/stratified enviromental sampling/apicalis/midden maps/apicalis_middens_",
+    current_year_bp, ".png"
+  )
+
+  # Save plot with white background
   ggsave(
-    filename = paste0(
-      "C:/github/SNR_SDM/Results/stratified enviromental sampling/apicalis/midden maps/apicalis_middens_",
-      current_year_bp, ".png"
-    ),
+    filename = plot_path,
     plot = p,
     width = 7,
-    height = 7
+    height = 7,
+    dpi = 300,
+    bg = "white"
   )
+  assign("plot_path", plot_path, envir = .GlobalEnv)
+source("C:/github/create_explainer/create_explainer.R")
+
+
+  # Trim and add white border
+  img <- magick::image_read(plot_path)
+  img_trimmed <- magick::image_trim(img)
+  img_bordered <- image_border(img_trimmed, color = "white", geometry = "30x30")
+  magick::image_write(img_bordered, path = plot_path)
 })
 
+```
+
+
+
+
+
+#Make 6 panel plot
+
+```{r make 6 panel plot}
+
+# Extract raster time slices
+raster_times <- terra::time(apicalis_spatrast)
+
+# Select target time steps
+target_times <- c(-28000, -15000, -12000, -7000, -4000, 0)
+matched_indices <- match(target_times, raster_times)
+panel_tags <- letters[1:length(target_times)]
+
+# Define colours
+point_colour <- "#FF3399"
+outline_colour <- "black"
+
+# Create individual panels
+panel_plots <- pmap(
+  list(idx = matched_indices, year = target_times, tag = panel_tags),
+  function(idx, year_bp, tag_label) {
+    current_prediction <- apicalis_spatrast[[idx]]
+    current_middens <- middens_sf %>%
+      filter(abs(time_bp - year_bp) <= 500) %>%
+      mutate(type = "Midden")
+
+    ggplot() +
+      geom_spatraster(data = current_prediction, aes(fill = mean)) +
+      scale_fill_terrain_c(name = "Probability\nof occurrence", limits = c(0, 1)) +
+      geom_sf(data = australia_outline, fill = NA, colour = outline_colour, linewidth = 0.5) +
+      geom_sf(data = current_middens,
+              aes(colour = type, shape = type),
+              fill = point_colour, size = 2, stroke = 0.4, show.legend = TRUE) +
+      scale_colour_manual(name = NULL, values = c("Midden" = "black")) +
+      scale_shape_manual(name = NULL, values = c("Midden" = 21)) +
+      coord_sf(xlim = c(112, 150), ylim = c(-40, -10)) +
+      scale_y_continuous(breaks = seq(-40, -10, by = 4)) +
+      scale_x_continuous(breaks = seq(112, 150, by = 8)) +
+      ggtitle(bquote("(" * .(tag_label) * ")  Years BP: " * .(abs(year_bp)))) +
+      theme(
+        plot.background = element_rect(fill = "white", colour = NA),
+        panel.background = element_rect(fill = "#E8E8E8", colour = NA),
+        panel.grid.major = element_line(colour = "#C4C4C4"),
+        panel.grid.minor = element_line(colour = "#C4C4C4"),
+        axis.text = element_text(size = 8),
+        axis.title = element_blank(),
+        plot.margin = margin(2, 2, 2, 2),
+        legend.position = "bottom",
+        legend.box = "horizontal",
+        legend.justification = "center",
+        legend.spacing.x = unit(1.2, "cm"),
+        legend.spacing.y = unit(0.4, "cm"),
+        legend.key = element_rect(fill = "transparent", colour = NA),
+        legend.title = element_text(size = 11),
+        legend.text = element_text(size = 11)
+      ) +
+      guides(
+  fill = guide_colourbar(
+    title = "Probability of occurrence",
+    title.position = "top",
+    title.theme = element_text(size = 11),
+    label.theme = element_text(size = 10),
+    direction = "horizontal",
+    barwidth = unit(5, "cm"),
+    barheight = unit(0.4, "cm")
+  ),
+  colour = guide_legend(
+    override.aes = list(size = 2.5),
+    title.theme = element_text(size = 11),
+    label.theme = element_text(size = 11)
+  ),
+  shape = guide_legend(
+    title.theme = element_text(size = 11),
+    label.theme = element_text(size = 11)
+  )
+)
+  }
+)
+
+# Combine panels and apply shared legend theme correctly
+final_panel <- wrap_plots(panel_plots, ncol = 2, guides = "collect") +
+  plot_annotation(
+    title = "Leporillus apicalis SDM with middens",
+    theme = theme(
+      plot.title = element_text(size = 14, face = "bold", hjust = 0.5)
+    )
+  ) &
+  theme(
+    legend.position = "bottom",
+    legend.box = "horizontal",
+    legend.justification = "center",
+    legend.spacing.x = unit(1.2, "cm"),
+    legend.spacing.y = unit(0.4, "cm"),
+    legend.key = element_rect(fill = "transparent", colour = NA)
+  )
+
+# Save figure
+ggsave("C:/github/SNR_SDM/Results/stratified enviromental sampling/apicalis/midden_panel_plot.png",
+       plot = final_panel, width = 10, height = 9, dpi = 300)
 
 ```
 # Calculate TSS 
@@ -622,7 +1191,7 @@ The model output is a continuous suitability gradient. for TSS to work we need t
 # -----------------------------------------------------------------
 
 # Use a default threshold (0.5) to create a preliminary binary raster.
-threshold_init <- 0.35
+threshold_init <- 0.27
 apicalis_binary_init <- app(x = apicalis_spatrast, fun = \(i) i > threshold_init)
 time(apicalis_binary_init) <- time(apicalis_spatrast) |> pastclim::ybp2date()
 apicalis_rs_init <- sds(apicalis_binary_init)
@@ -758,29 +1327,231 @@ print(paste0("F2 score: ", f2score))
 # Partial Dependence Profiles and Variable Importance
 
 ```{r PDP}
-# PDP for bio12
-# Explain the ensemble model to generate partial dependence profiles and variable importance
-explainer_apicalis_ens <- explain_tidysdm(apicalis_ensemble)  # Create an explainer object for the ensemble model
+library(DALEX)
+library(tidysdm)
+library(ggplot2)
+library(dplyr)
 
-# Compute variable importance using the DALEX package
-vip_ensemble <- model_parts(explainer = explainer_apicalis_ens)  # Calculate variable importance
-plot(vip_ensemble)  # Plot the variable importance results
+# Create explainer
+apicalis_explainer <- explain_tidysdm(apicalis_ensemble)
 
-# Generate a partial dependence profile for bio12
-pdp_bio12 <- model_profile(explainer_apicalis_ens, N = 500, variables = "bio12")  # Generate PDP for bio12
-plot(pdp_bio12)  # Plot the partial dependence profile for bio12
+# Set output path
+apicalis_outdir <- "C:/github/SNR_SDM/Results/stratified enviromental sampling/apicalis/variable_importance"
+
+# Get variable importance
+apicalis_vip <- model_parts(explainer = apicalis_explainer)
+
+# Filter out baseline and full model
+apicalis_vip_filtered <- apicalis_vip %>%
+  filter(!variable %in% c("_baseline_", "_full_model_"))
+
+# Summarise to get mean dropout loss for bars
+apicalis_vip_summary <- apicalis_vip_filtered %>%
+  group_by(variable) %>%
+  summarise(mean_dropout_loss = mean(dropout_loss, na.rm = TRUE)) %>%
+  ungroup()
+
+# Plot with two layers: bars first, then boxplots
+apicalis_vip_plot <- ggplot() +
+  # Light purple bars for mean
+  geom_col(data = apicalis_vip_summary, 
+           aes(x = reorder(variable, -mean_dropout_loss), y = mean_dropout_loss),
+           fill = "#BC43FF", colour = "#740CB4", width = 0.7) +
+  # Dark purple boxplots fully filled
+  geom_boxplot(data = apicalis_vip_filtered,
+               aes(x = variable, y = dropout_loss),
+               width = 0.4,
+               colour = "#740CB4", fill = "#740CB4", alpha = 1,
+               outlier.shape = NA) +
+  coord_flip() +
+  labs(
+    title = "Leporillus apicalis – Variable Importance",
+    y = "Drop-out Loss",
+    x = "Environmental Variable"
+  ) +
+  theme_minimal(base_size = 12) +
+  theme(
+    plot.background = element_rect(fill = "white", colour = NA),
+    panel.background = element_rect(fill = "#F2F2F2", colour = NA),
+    panel.grid.major = element_line(colour = "#C4C4C4", linewidth = 0.3),
+    panel.grid.minor = element_line(colour = "#C4C4C4", linewidth = 0.2),
+    panel.border = element_rect(colour = "#C4C4C4", fill = NA, linewidth = 0.3),
+    plot.title = element_text(face = "italic", size = 13),
+    axis.text = element_text(size = 12)  # <- fix axis label size
+  ) +
+  annotate("text", x = Inf, y = Inf, label = "(b)", hjust = 1.1, vjust = 1.5, size = 5, fontface = "bold")
+
+  
 
 
-#PDP for bio05
+# Save
+ggsave(
+  filename = file.path(apicalis_outdir, "apicalis_variable_importance_combined.png"),
+  plot = apicalis_vip_plot,
+  width = 6, height = 4, dpi = 300
+)
 
-# Generate and plot a partial dependence profile for bio05
-pdp_bio05 <- model_profile(explainer_apicalis_ens, N = 500, variables = "bio05")
-plot(pdp_bio05)
+# 2. FUNCTION TO CREATE & SAVE PDP PLOTS
+apicalis_plot_and_save_pdp <- function(var, label) {
+  apicalis_pdp <- model_profile(apicalis_explainer, N = 500, variables = var)
+
+  apicalis_pdp_plot <- ggplot(apicalis_pdp$agr_profiles, aes(x = `_x_`, y = `_yhat_`)) +
+    geom_line(colour = "darkblue", linewidth = 1) +
+    labs(
+      title = paste("Leporillus apicalis – Partial Dependence on", var),
+      x = label,
+      y = "Predicted Suitability"
+    ) +
+    theme_minimal(base_size = 12) +
+    theme(
+      plot.title = element_text(face = "italic", size = 13),
+      legend.position = "none"
+    )
+
+  ggsave(
+    filename = file.path(apicalis_outdir, paste0("apicalis_pdp_", var, ".png")),
+    plot = apicalis_pdp_plot,
+    width = 6, height = 4, dpi = 300
+  )
+}
+
+# 3. GENERATE & SAVE ALL PDPs
+apicalis_plot_and_save_pdp("bio05", "Maximum temperature of warmest month (°C)")
+apicalis_plot_and_save_pdp("bio06", "Minimum temperature of coldest month (°C)")
+apicalis_plot_and_save_pdp("bio12", "Annual precipitation (mm)")
 
 
-#$ PDP for bio06
- 
-# Generate and plot a partial dependence profile for bio06
-pdp_bio06 <- model_profile(explainer_apicalis_ens, N = 500, variables = "bio06")
-plot(pdp_bio06)
+```
+
+##Kernel density estimate 
+```{r}
+# Load required libraries
+# Load necessary libraries
+library(tidyverse)
+library(sf)
+library(rnaturalearth)
+library(rnaturalearthdata)
+library(viridis)
+
+# Load and prepare data
+dated_middens_2 <- read.csv("C:/github/SNR_SDM/Data/processed/datedmiddens.csv")
+
+# Convert to sf
+middens_sf_2 <- st_as_sf(dated_middens_2, coords = c("longitude", "latitude"), crs = 4326)
+
+# Extract coordinates
+middens_df_2 <- middens_sf_2 %>%
+  mutate(
+    longitude = st_coordinates(.)[, 1],
+    latitude = st_coordinates(.)[, 2]
+  ) %>%
+  st_drop_geometry()
+
+# Australia map
+aus_outline <- ne_countries(scale = "medium", returnclass = "sf") %>%
+  filter(admin == "Australia")
+
+# Dummy bbox for consistent framing
+bbox_sf <- st_as_sfc(st_bbox(c(
+  xmin = 108, xmax = 152,
+  ymin = -46, ymax = -8
+), crs = 4326)) %>% st_sf()
+
+# Check if there are at least a few dozen distinct coordinates
+print(head(middens_df_2))
+print(nrow(middens_df_2))
+
+# Add dummy points at map edges to force KDE range
+pad_points <- data.frame(
+  longitude = c(110, 150, 150, 110),
+  latitude = c(-10, -10, -45, -45)
+)
+
+# Combine with midden data
+middens_df_padded <- bind_rows(middens_df_2, pad_points)
+
+# Plot with KDE using padded data
+p <- ggplot() +
+  geom_sf(data = aus_outline, fill = scales::alpha("#C4C4C4", 0.5), colour = "black") +
+  stat_density_2d(
+    data = middens_df_padded,
+    aes(x = longitude, y = latitude, fill = after_stat(level)),
+    geom = "polygon",
+    contour = TRUE,
+    colour = NA,
+    adjust = 0.4,
+    alpha = 0.8,
+    n = 200
+  ) +
+  scale_fill_viridis_c(option = "magma", name = "Density", direction = -1) +
+  coord_sf(xlim = c(110, 155), ylim = c(-45, -10), expand = FALSE) +
+  labs(
+    title = "Spatial Density of Dated Midden Samples",
+    x = "Longitude",
+    y = "Latitude"
+  ) +
+  theme_minimal(base_size = 12) +
+  theme(
+    plot.background = element_rect(fill = "white", colour = NA),
+    panel.background = element_rect(fill = "#F2F2F2", colour = NA),
+    panel.grid.major = element_line(colour = "#C4C4C4"),
+    panel.grid.minor = element_line(colour = "#C4C4C4"),
+    
+    # Legend styling for in-panel placement
+    legend.position = c(0.03, 0.20),  # ⬅️ top-left corner
+    legend.justification = c("left", "top"),
+    legend.background = element_rect(fill = "white", colour = "grey70", linewidth = 0.3),
+    legend.key = element_rect(fill = "white", colour = NA),
+    legend.margin = margin(6, 12, 6, 9),  # ⬅️ wider horizontal padding
+    legend.title = element_text(size = 10),
+    legend.text = element_text(size = 9),
+      ) +
+    guides(
+      fill = guide_colourbar(
+        title = "Density",
+        title.position = "top",
+        title.theme = element_text(size = 10),
+        label.theme = element_text(size = 9),
+        direction = "horizontal",
+        barwidth = unit(4, "cm"),
+        barheight = unit(0.4, "cm"),
+        ticks = TRUE,
+        ticks.colour = "black",
+        frame.colour = "grey70",
+        frame.linewidth = 0.3,
+        label.position = "bottom",
+        breaks = c(0, 0.04, 0.08)  # ⬅️ This limits to 3 ticks
+      )
+    )
+
+
+ggsave(
+  filename = "C:/github/SNR_SDM/Results/stratified enviromental sampling/midden_sampling_density.png",
+  plot = p,
+  width = 7,
+  height = 6,
+  dpi = 300,
+  bg = "white"
+)
+
+
+
+
+```
+```{r endnote library}
+# Ensure working directory is set to Results folder
+setwd("C:/github/SNR_SDM/Results")
+
+# Run EndNote export script to create citation library in this folder
+source("C:/github/create_endnote_library/create_endnote_library.r")
+
+```
+
+```{r}
+lapply(c("tidysdm", "tidymodels", "workflowsets", "workflows", "tune", "parsnip", "recipes", "yardstick", "rsample", 
+         "spatialsample", "dials", "dplyr", "tidyr", "purrr", "tibble", "ggplot2", "cowplot", "scales", "viridis", 
+         "viridisLite", "sf", "terra", "tidyterra", "pastclim", "oz", "rworldmap", "DALEX", "ecospat", "broom", 
+         "infer", "readr", "fs", "gtools", "RefManageR"), 
+       function(pkg) { cat("\n---", pkg, "---\n"); print(citation(pkg)) })
+
 ```
