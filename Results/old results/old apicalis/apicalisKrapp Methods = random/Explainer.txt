@@ -1,1 +1,0 @@
-This is made using the "Krapp apicalis.rmd" code, which uses a modified version of the code used for the paleoview model. 

@@ -1,0 +1,3 @@
+Supplementary analyses 1–3 are provided as separate folders, each containing the full R workflow and output files. The scripts are identical apart from file paths and the input dataset used.
+
+These analyses demonstrate the impact of modelling across multiple time steps versus a single time slice. Analyses 2 and 3 include time steps with only one or two presence points, which leads to pseudo-absence generation based on very limited information. 

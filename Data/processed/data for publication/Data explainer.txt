@@ -1,0 +1,27 @@
+Location Denaturing Statement
+
+To protect potentially sensitive ecological and cultural information, all 
+coordinate data in this folder have been generalised to a spatial resolution of 
+0.1 decimal degrees (approximately 10 km). This follows best-practice guidance 
+from the GBIF Sensitive Species Data Best Practices 
+(https://docs.gbif.org/sensitive-species-best-practices/master/en/), and reflects 
+a precautionary approach to spatial data sharing.
+
+Datasets:
+- apicalis_flat.csv: Primary dataset used in the main SDM analysis. Occurrence 
+  coordinates were rounded to 0.1° to minimise location precision while retaining 
+  modelling utility.
+
+- apicalis_middens.csv and apicalis_true_dates.csv: Supplementary datasets used 
+  for exploratory comparisons. These illustrate how temporal structuring 
+  (z-axis information) affects model quality and interpretation. They were also 
+  denatured to 0.1°.
+
+No identifying attributes have been included to distinguish midden or subfossil 
+points within any file. These generalised data are suitable for species 
+distribution modelling at broad spatial and temporal scales but are not intended 
+for fine-scale locality studies.
+
+Full-resolution coordinate data are not included in this archive and are not 
+available for public release. These data may be shared on request, subject to 
+appropriate use conditions.

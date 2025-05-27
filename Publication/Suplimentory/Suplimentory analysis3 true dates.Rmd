@@ -1,0 +1,368 @@
+---
+title: "apicalis"
+author: "Annie"
+date: "2024-06-20"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+#Libraries
+```{r libraries,}
+# Load necessary libraries for various tasks including data manipulation, spatial analysis, plotting, and machine learning
+library(broom)
+library(car)
+library(DALEX)
+library(dials)
+library(dplyr)
+library(ggplot2)
+library(infer)
+library(modeldata)
+library(oz)
+library(parsnip)
+library(pastclim)
+library(purrr)
+library(readr)
+library(recipes)
+library(rsample)
+library(rworldmap)
+library(sf)
+library(tidyr)
+library(tidymodels)
+library(tidysdm)
+library(tidyterra)
+library(tibble)
+library(tune)
+library(terra)
+library(workflows)
+library(workflowsets)
+library(gtools)
+library(fs)
+```
+
+#Set the working directory
+```{r Set the working directory}
+
+knitr::opts_knit$set(root.dir =("C:/github/SNR_SDM/Data/processed"))
+```
+```{r download climate}
+pastclim::download_dataset("Krapp2021")
+```
+#Read apicalis data
+Read in the 'apicalis_true_dates.csv' file, print its contents, convert to sf, and set the CRS
+
+```{r read file}
+setwd("C:/github/SNR_SDM/Data/processed")
+apicalis <- read_csv("apicalis_true_dates.csv") %>%
+  {print(.); .} %>%  # Print the data frame to check its contents
+  st_as_sf(coords = c("longitude", "latitude")) %>%
+  st_set_crs(4326)  # Set the Coordinate Reference System (CRS) to GDA2020, which has the EPSG code 4326
+
+```
+
+#Create Aust_extent
+an extent object for Australia using s min and max X and Y coordinates Object type: Extent (terra package)
+
+```{r}
+Aust_extent <- terra::ext(110, 152.5, -42.5, -7.5)
+```
+
+
+##Krapp2021
+Create a land mask for the present time using the 'Krapp2021' dataset from the 'pastclim' package Object type: SpatRaster where X =longitude, Y = latitude, Z = time
+```{r}
+land_mask_current <- pastclim::get_land_mask(time_bp = 0, dataset = "Krapp2021") %>%
+  crop(vect(Aust_extent)) %>% 
+  aggregate(fact = 5, fun = "mean", na.rm = T)
+```
+
+
+#plot apicalis occurrence
+Use ggplots to plot apicalis occurrence with current land mask
+
+```{r Plot the data using ggplot2}
+ggplot() +
+  geom_spatraster(data = land_mask_current, aes()) +  # Add the land mask as a spatial raster layer
+  scale_fill_terrain_c() +  # Use a terrain color scale for the land mask
+  geom_sf(data = apicalis, aes(col = time_bp))  # Add the 'apicalis2' sf object as spatial features, colouring by the 'time_bp' column
+```
+
+Create a time series of palaeoclimate reconstructions using the Beyer2020 dataset. This covers the last 120,000 years with data points every 1,000 to 2,000 years at a resolution of approximately 0.5° x 0.5°. We will use the land mask created earlier. 
+```{r create climate time series}
+climate_vars <- c('bio05','bio06','bio12')
+climate_full <- pastclim::region_series(
+  bio_variables = climate_vars,
+  data = "Krapp2021",
+  crop = vect(Aust_extent) )
+```
+
+```{r}
+apicalis2 <- sample_pseudoabs_time(apicalis %>% 
+                                     filter(time_bp > -20000,
+                                            time_bp < -90),
+                                   n_per_presence = 3,
+                                   raster = climate_full[[1]],
+                                   time_col = "time_bp",
+                                   lubridate_fun = pastclim::ybp2date,
+                                   method = c("dist_min", km2m(150)))
+
+ggplot() +
+  geom_spatraster(data = land_mask_current) +
+  scale_fill_terrain_c() +
+  geom_sf(data = apicalis2, aes(col = class))
+
+```
+
+#retrieve climate data for this region
+
+```{r extract climate for region}
+apicalis_df <- apicalis2 %>%
+  dplyr::bind_cols(sf::st_coordinates(apicalis2)) %>%
+  mutate(time_bp = date2ybp(time_step)) %>% 
+  as.data.frame() %>%
+  select(-geometry)
+# get climate
+apicalis_df <- location_slice_from_region_series(apicalis_df,
+                                                 region_series = climate_full)
+```
+add the climate reconstructions to the sf object, and remove the time_step
+as we don't need it for modelling
+
+```{r add climate to sf}
+apicalis4 <- apicalis2 %>%
+  bind_cols(apicalis_df[, c("bio05", "bio06", "bio12")]) %>%
+  select(-time_step) %>%
+  filter(!is.na(.$bio05))
+```
+
+# Fit the model by crossvalidation
+
+ Next, we need to set up a recipe to define how to handle our dataset. We don’t want to transform our data, so we just need to define the formula (class is the outcome, all other variables are predictors; note that, for sf objects, geometry is automatically ignored as a predictor):
+
+
+```{r make recipe}
+apicalis_rec <- recipe(apicalis4, formula = class ~ .)
+apicalis_rec
+```
+
+We can quickly check that we have the variables that we want with:
+
+`apicalis_rec$var_info`
+
+We now build a workflow_set of different models, defining which hyperparameters we want to tune. We will use glm, gam, random forest and boosted trees as our models, so only random forest and boosted trees have tunable hyperparameters. For the most commonly used models, tidysdm automatically chooses the most important parameters, but it is possible to fully customise model specifications.
+
+```{r specify models}
+apicalis_models <-
+  # create the workflow_set
+  workflow_set(
+    preproc = list(default = apicalis_rec),
+    models = list(
+      # the standard glm specs  (no params to tune)
+      glm = sdm_spec_glm(),
+      # the standard sdm specs (no params to tune)
+      gam = sdm_spec_gam(),
+      # rf specs with tuning
+      rf = sdm_spec_rf(),
+      # boosted tree model (gbm) specs with tuning
+      gbm = sdm_spec_boost_tree()
+    ),
+    # make all combinations of preproc and models,
+    cross = TRUE
+  ) %>%
+  # set formula for gams
+  update_workflow_model("default_gam",
+                        spec = sdm_spec_gam(),
+                        formula = gam_formula(apicalis_rec)
+  ) %>%
+  # tweak controls to store information needed later to create the ensemble
+  option_add(control = control_ensemble_grid())
+```
+Note that gams are unusual, as we need to specify a formula to define to which variables we will fit smooths. By default, gam_formula() fits a smooth to every continuous predictor, but a custom formula can be provided instead.
+
+We now want to set up a spatial block cross-validation scheme to tune and assess our models:
+
+```{r set up cross validation}
+library(tidysdm)
+set.seed(1005)
+apicalis_cv <- spatial_block_cv(apicalis4, v = 5)
+autoplot(apicalis_cv)
+```
+
+We can now use the block CV folds to tune and assess the models:
+
+```{r tune models}
+set.seed(123)
+apicalis_models <- apicalis_models %>%
+  workflow_map("tune_grid",
+               resamples = apicalis_cv, grid = 5,
+               metrics = sdm_metric_set(), verbose = TRUE)
+```
+
+Note that workflow_set correctly detects that we have no tuning parameters for glm and gam. We can have a look at the performance of our models with:
+autoplot(apicalis_models)
+
+Now let’s create an ensemble, selecting the best set of parameters for each model (this is really only relevant for the random forest, as there were not hype-parameters to tune for the glm and gam). We will use the Boyce continuous index as our metric to choose the best random forest and boosted tree. When adding members to an ensemble, they are automatically fitted to the full training dataset, and so ready to make predictions.
+
+```{r ensemble}
+apicalis_ensemble <- simple_ensemble() %>% add_member(apicalis_models, metric = "boyce_cont")
+
+autoplot(apicalis_ensemble)
+```
+We can now make predictions with this ensemble (using the default option of taking the mean of the predictions from each model) for the Last Glacial Maximum (LGM, 21,000 years ago).
+
+```{r create LGM}
+climate_lgm <- rast(list(climate_full[[1]][[1]], climate_full[[2]][[1]], climate_full[[3]][[1]]))
+names(climate_lgm) <- c("bio05", "bio06", "bio12")
+```
+
+And predict using the ensemble:
+
+```{r predict lgm}
+prediction_lgm <- predict_raster(apicalis_ensemble, climate_lgm)
+ggplot() +
+  geom_spatraster(data = prediction_lgm, aes(fill = mean)) +
+  scale_fill_terrain_c(name = "Probability\nof occurrence")
+```
+## save model as spatraster
+
+```{r save_model_spatraster}
+
+# Initialize an empty SpatRaster stack
+apicalis_spatrast <- NULL
+
+# Loop through 40 time steps (40ka in 1ka timesteps) to create and stack rasters
+walk(760:800, function(timestep) {
+  year_bp <- time(climate_full[[1]])[timestep] - 1950  # Calculate years before present for each timestep
+  
+  # Create a climate snapshot for the current timestep
+  climate_snapshot <- rast(list(
+    climate_full[[1]][[timestep]], 
+    climate_full[[2]][[timestep]], 
+    climate_full[[3]][[timestep]]
+  ))
+  names(climate_snapshot) <- c("bio05", "bio06", "bio12")  # Rename layers to match the climate variables
+
+  # Predict species occurrence for the current climate snapshot
+  apicalis_prediction_raster <- predict_raster(apicalis_ensemble, climate_snapshot)
+  
+  # Stack the prediction raster along the z-axis
+  apicalis_spatrast <<- if (is.null(apicalis_spatrast)) {
+    apicalis_prediction_raster
+  } else {
+    c(apicalis_spatrast, apicalis_prediction_raster)
+  }
+})
+
+# Assign time steps to the z-axis of the stacked raster
+time(apicalis_spatrast) <- time(climate_full[[1]])[760:800] - 1950
+
+# Save the stacked SpatRaster to a file
+dir.create("C:/github/SNR_SDM/Results/supplementary/Supplementary_analysis_3/apicalis", recursive = TRUE, showWarnings = FALSE)
+output_file <- "C:/github/SNR_SDM/Results/supplementary/Supplementary_analysis_3/predictions_stack.tif"
+writeRaster(apicalis_spatrast, filename = output_file, overwrite = TRUE)
+```
+Let's make a whole stack of predictions and write the maps to a folder.
+
+```{r stack o maps}
+library(purrr)
+walk(760:800, function(timestep) {
+  year_bp <- flatten_int(time(climate_full))[timestep] - 2000
+  climate_snapshot <- rast(list(climate_full[[1]][[timestep]], 
+                           climate_full[[2]][[timestep]], 
+                           climate_full[[3]][[timestep]]))
+  names(climate_snapshot) <- c("bio05", "bio06", "bio12")
+  prediction1 <- predict_raster(apicalis_ensemble, climate_snapshot)
+  p <- ggplot() +
+    geom_spatraster(data = prediction1, aes(fill = mean)) +
+    scale_fill_terrain_c(name = "Probability\nof occurrence") +
+    ggtitle(paste0("Years BP: ", year_bp))
+  ggsave(path= "C:/github/SNR_SDM/Results/supplementary/Supplementary_analysis_3/",
+         plot = p,
+         filename = paste0("map_", year_bp, ".png"))
+})
+
+# Set global variable for metadata script
+plot_path <- "C:/github/SNR_SDM/Results/supplementary/Supplementary_analysis_3/map_0.png"  # Just a dummy file to set the path
+source("C:/github/create_explainer/create_explainer.R")       # Load the explainer script
+
+
+
+
+```
+
+```{r 6 image panel}
+library(ggplot2)
+library(patchwork)
+library(terra)
+library(purrr)
+library(dplyr)
+# Load world map and convert to sf object
+world_map <- rworldmap::getMap(resolution = "high")
+australia_outline <- sf::st_as_sf(world_map)  # Do not filter, keeping all land
+
+# Extract raster time steps
+raster_times <- terra::time(apicalis_spatrast)
+
+# Define target slices
+target_times <- c(-40000, -26000, -21000, -12000, -6000, 0)
+matched_indices <- match(target_times, raster_times)
+panel_tags <- letters[1:length(target_times)]
+
+# Define colours
+bg_colour <- "#DCF3FC"
+outline_colour <- "black"
+
+# Create each panel (no middens)
+panel_plots <- pmap(
+  list(idx = matched_indices, year = target_times, tag = panel_tags),
+  function(idx, year_bp, tag_label) {
+    current_prediction <- apicalis_spatrast[[idx]]
+
+    ggplot() +
+      geom_spatraster(data = current_prediction, aes(fill = mean)) +
+      scale_fill_terrain_c(name = "Probability\nof occurrence", limits = c(0, 1)) +
+      geom_sf(data = australia_outline, fill = NA, colour = "grey20", linewidth = 0.3) +
+      coord_sf(xlim = c(112, 150), ylim = c(-40, -10)) +
+      scale_y_continuous(breaks = seq(-40, -10, by = 4)) +
+      scale_x_continuous(breaks = seq(112, 150, by = 8)) +
+      ggtitle(bquote("(" * .(tag_label) * ")  Years BP: " * .(year_bp))) +
+      theme_minimal(base_size = 10) +
+      theme(
+        panel.background = element_rect(fill = bg_colour, colour = NA),
+        plot.background = element_rect(fill = "white", colour = NA),
+        panel.grid.major = element_line(colour = "white"),
+        panel.grid.minor = element_blank(),
+        axis.text = element_text(size = 8),
+        axis.title = element_blank(),
+        plot.margin = margin(2, 2, 2, 2),
+        legend.position = "right",
+        legend.title = element_text(size = 11),
+        legend.text = element_text(size = 11)
+      ) +
+      guides(
+        fill = guide_colourbar(
+          title.theme = element_text(size = 11),
+          label.theme = element_text(size = 11)
+        )
+      )
+  }
+)
+
+# Combine into multi-panel figure
+final_panel <- wrap_plots(panel_plots, ncol = 2, guides = "collect") +
+  plot_annotation(
+    title = expression(italic("Leporillus apicalis") * " Supplementary figure 3 - true dates"),
+    theme = theme(
+      plot.title = element_text(size = 14, face = "bold", hjust = 0.5)
+    )
+  )
+
+# Save the panel
+ggsave("C:/github/SNR_SDM/Results/supplementary/Supplementary_analysis_3/Supplementary_figure_3_true_dates.png",
+       plot = final_panel, width = 10, height = 9, dpi = 300)
+
+```
+
+
+
