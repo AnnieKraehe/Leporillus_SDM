@@ -1,10 +1,11 @@
 These files were generated using R version 4.4.3 (2025-02-28 ucrt)
-Date run: 2025-05-13
-Script title: Krapp apicalis finished.Rmd
-Script location: C:/github/SNR_SDM/Analyes/Krapp apicalis finished.Rmd
+Date run: 2025-10-20
+Script title: Unknown (script path not available outside RStudio)
+Script location: 
 
 Packages used:
   - cowplot: 1.1.3
+  - here: 1.0.1
   - viridis: 0.6.5
   - viridisLite: 0.4.2
   - USE: 0.1.5
@@ -27,6 +28,7 @@ Packages used:
   - recipes: 1.1.0
   - readr: 2.1.5
   - purrr: 1.0.2
+  - patchwork: 1.3.0
   - pastclim: 2.1.0
   - terra: 1.7.83
   - parsnip: 1.2.1

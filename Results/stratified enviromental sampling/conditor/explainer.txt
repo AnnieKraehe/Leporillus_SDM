@@ -1,26 +1,16 @@
 These files were generated using R version 4.4.3 (2025-02-28 ucrt)
-Date run: 2025-05-13
+Date run: 2025-10-16
 Script title: Krapp conditor.Rmd
 Script location: C:/github/SNR_SDM/Analyes/Krapp conditor.Rmd
 
 Packages used:
-  - RefManageR: 1.4.0
-  - rnaturalearthdata: 1.0.0
-  - rnaturalearth: 1.0.1
-  - lubridate: 1.9.3
-  - forcats: 1.0.0
-  - stringr: 1.5.1
-  - tidyverse: 2.0.0
-  - ggspatial: 1.1.9
-  - rworldxtra: 1.1
-  - geosphere: 1.5.20
-  - patchwork: 1.3.0
   - magick: 2.8.6
   - xgboost: 1.7.8.1
   - ranger: 0.17.0
   - mgcv: 1.9.1
   - nlme: 3.1.167
   - cowplot: 1.1.3
+  - here: 1.0.1
   - viridis: 0.6.5
   - viridisLite: 0.4.2
   - USE: 0.1.5
@@ -43,6 +33,7 @@ Packages used:
   - recipes: 1.1.0
   - readr: 2.1.5
   - purrr: 1.0.2
+  - patchwork: 1.3.0
   - pastclim: 2.1.0
   - terra: 1.7.83
   - parsnip: 1.2.1
