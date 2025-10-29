@@ -1,9 +1,10 @@
 These files were generated using R version 4.4.3 (2025-02-28 ucrt)
-Date run: 2025-10-23
-Script title: Unknown (script path not available outside RStudio)
-Script location: 
+Date run: 2025-10-29
+Script title: Krapp apicalis finished.Rmd
+Script location: C:/github/SNR_SDM/Analyes/Krapp apicalis finished.Rmd
 
 Packages used:
+  - magick: 2.8.6
   - xgboost: 1.7.8.1
   - ranger: 0.17.0
   - mgcv: 1.9.1

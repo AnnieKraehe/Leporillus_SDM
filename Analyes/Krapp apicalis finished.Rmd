@@ -349,7 +349,8 @@ apicalis4 <- apicalis %>%
   st_as_sf(coords = c("x", "y")) # Convert back to sf object                               
 ```
 
-# Fit the model by cross-validation
+
+ Fit the model by cross-validation
 
 ## Set Up a Recipe for Modeling
 
@@ -407,113 +408,22 @@ apicalis_models <- apicalis_models %>%
 
 ## Create an Ensemble Model
 
+```{r ensemble}
+# Create an ensemble by selecting the best set of parameters for each model
+# The Boyce continuous index will be used as the metric for selecting the best random forest and boosted tree models
+apicalis_ensemble <- simple_ensemble() %>%
+  add_member(apicalis_models, metric = "boyce_cont")  # Add members to the ensemble using Boyce index as the metric
 
-```{r}
-library(purrr)
-library(dplyr)
-library(ggplot2)
-library(tidyr)
-
-# 1. Define your model and metric labels
-workflow_labels <- c(
-  default_gam = "Generalised Additive Model",
-  default_gbm = "Boosted Tree",
-  default_glm = "Generalised Linear Model",
-  default_rf  = "Random Forest"
-)
-
-model_order <- c(
-  "Generalised Additive Model",
-  "Boosted Tree",
-  "Generalised Linear Model",
-  "Random Forest"
-)
-
-metric_labels <- c(
-  boyce_cont = "Boyce Index",
-  roc_auc = "AUC",
-  tss_max = "TSS"
-)
-
-colour_map <- c(
-  "Generalised Additive Model" = "#FF61C3",
-  "Boosted Tree"               = "#00B140",
-  "Generalised Linear Model"   = "#00BFFF",
-  "Random Forest"              = "#BC43FF"
-)
-
-# 2. Extract fold-level performance from tuned models
-perf_data <- apicalis_models %>%
-  mutate(metrics = map(result, collect_metrics, summarize = FALSE)) %>%
-  select(wflow_id, metrics) %>%
-  unnest(metrics)
-
-# 3. Clean and label the data
-perf_data_clean <- perf_data %>%
-  filter(.metric %in% names(metric_labels)) %>%
-  mutate(
-    model = factor(workflow_labels[wflow_id], levels = model_order),
-    metric_label = factor(metric_labels[.metric], levels = c("Boyce Index", "AUC", "TSS"))
-  )
-
-# 4. Plot using boxplot and jitter
-ggplot(perf_data_clean, aes(x = model, y = .estimate, fill = model)) +
-  geom_boxplot(width = 0.6, alpha = 0.9, outlier.shape = NA) +
-  geom_jitter(
-    aes(colour = model),
-    size = 1.3,
-    width = 0.15,
-    alpha = 0.4,
-    stroke = 0.3,
-    shape = 21
-  ) +
-  scale_fill_manual(values = colour_map, name = "Model Type") +
-  scale_colour_manual(values = rep("black", length(model_order)), guide = "none") +
-  facet_wrap(~ metric_label, scales = "free_y") +
-  labs(
-    title = "Model Performance Across Algorithms (Fold-Level)",
-    x = NULL,
-    y = "Performance Metric"
-  ) +
-  theme_minimal(base_size = 12) +
-  theme(
-    panel.background = element_rect(fill = "#EEEEEE", colour = NA),
-    plot.background = element_rect(fill = "white", colour = NA),
-    panel.grid.major = element_line(colour = "white"),
-    panel.grid.minor = element_blank(),
-    axis.text.x = element_blank(),
-    axis.ticks.x = element_blank(),
-    legend.position = "right",
-    legend.direction = "vertical",
-    legend.title = element_text(size = 11),
-    legend.text = element_text(size = 10),
-    plot.title = element_text(face = "bold", size = 13),
-    strip.text = element_text(margin = margin(b = 5))
-  )
-
-
-# 6. Save and generate metadata
-plot_path <- file.path(results_dir, "ensemble", "ensemble_performance_clean.png")
-
-ggsave(
-  filename = plot_path,
-  width = 8,
-  height = 5,
-  dpi = 300
-)
-
-
-# Add metadata
-source("C:/github/create_explainer/create_explainer.R")
-
+autoplot(apicalis_ensemble)  # Plot the ensemble model performance
 ```
+
 # Projecting to other times
 
 ## Make Predictions for the Last Glacial Maximum (LGM)
 
 ```{r create LGM}
-# Create a climate raster for the Last Glacial Maximum (LGM) using the correct layer (779) for 21,000 BP
-climate_lgm <- rast(list(climate_full[[1]][[538]], climate_full[[2]][[538]], climate_full[[3]][[538]]))  # Extract 20,000 BP layers
+# Create a climate raster for the Last Glacial Maximum (LGM) using the correct layer (21) for 20,000 BP
+climate_lgm <- rast(list(climate_full[[1]][[779]], climate_full[[2]][[779]], climate_full[[3]][[779]]))  # Extract 20,000 BP layers
 names(climate_lgm) <- c("bio05", "bio06", "bio12")  # Rename the layers to match the climate variables
 
 
@@ -523,36 +433,12 @@ names(climate_lgm) <- c("bio05", "bio06", "bio12")  # Rename the layers to match
 
 ```{r predict lgm}
 # Use the ensemble model to predict species occurrence probabilities for the Last Glacial Maximum (LGM)
-apicalis_prediction_lgm <- predict_raster(apicalis_ensemble, climate_lgm)  # Predict LGM probabilities
+prediction_lgm <- predict_raster(apicalis_ensemble, climate_lgm)  # Predict LGM probabilities
 
 # Plot the predicted probabilities using ggplot2
 ggplot() +
-  geom_spatraster(data = apicalis_prediction_lgm, aes(fill = mean)) +  # Add the prediction raster to the plot
+  geom_spatraster(data = prediction_lgm, aes(fill = mean)) +  # Add the prediction raster to the plot
   scale_fill_terrain_c(name = "Probability\nof occurrence")  # Use a terrain color scale to show probabilities
-
-
-# Load world map data and filter for Australia
-world_map <- rworldmap::getMap(resolution = "high")
-australia_outline <- sf::st_as_sf(world_map) %>%
-  dplyr::filter(ADMIN == "Australia")  # Keep only Australia
-
-# Define the point location (convert to a data frame for ggplot)
-point_location <- data.frame(
-  longitude = 118.965510,
-  latitude = -24.270740  # South is negative in latitude
-)
-
-# Plot the predicted probabilities with an Australia outline and the red dot
-ggplot() +
-  geom_spatraster(data = apicalis_prediction_lgm, aes(fill = mean)) +  # Add the prediction raster
-  scale_fill_terrain_c(name = "Probability\nof occurrence") +  # Use a terrain color scale
-  geom_sf(data = australia_outline, fill = NA, color = "black", linewidth = 0.6) +  # Add black outline
-  geom_point(data = point_location, aes(x = longitude, y = latitude), color = "red", size = 1) +  # Add red dot
-  coord_sf(xlim = c(112, 150), ylim = c(-40, -10))  # Crop to 10°S–40°S latitude and 110°E–150°E longitude
-
-
-
-
 ```
 
 ## save model as spatraster
@@ -575,24 +461,32 @@ walk(760:800, function(timestep) {
   names(climate_snapshot) <- c("bio05", "bio06", "bio12")  # Rename layers to match the climate variables
 
   # Predict species occurrence for the current climate snapshot
-  apicalis_prediction_raster <- predict_raster(apicalis_ensemble, climate_snapshot)
+  prediction_raster <- predict_raster(apicalis_ensemble, climate_snapshot)
   
   # Stack the prediction raster along the z-axis
   apicalis_spatrast <<- if (is.null(apicalis_spatrast)) {
-    apicalis_prediction_raster
+    prediction_raster
   } else {
-    c(apicalis_spatrast, apicalis_prediction_raster)
+    c(apicalis_spatrast, prediction_raster)
   }
 })
 
 # Assign time steps to the z-axis of the stacked raster
 time(apicalis_spatrast) <- time(climate_full[[1]])[760:800] - 1950
 
-# Save the stacked SpatRaster to a file
-output_file <- file.path(results_dir, "predictions_stack.tif")
+output_dir <- "C:/github/SNR_SDM/Results/apicalis Krapp model"
+if (!dir.exists(output_dir)) dir.create(output_dir, recursive = TRUE)
+
+output_file <- file.path(output_dir, "predictions_stack.tif")
 writeRaster(apicalis_spatrast, filename = output_file, overwrite = TRUE)
 
+
+# Save the stacked SpatRaster to a file
+output_file <- "C:/github/SNR_SDM/Results/apicalis Krapp model/predictions_stack.tif"
+writeRaster(apicalis_spatrast, filename = output_file, overwrite = TRUE)
 ```
+
+## Create a Stack of Predictions and Plot for All Time Steps
 
 ## stack o maps
 
@@ -617,7 +511,8 @@ walk(760:800, function(timestep) {
   names(climate_snapshot) <- c("bio05", "bio06", "bio12")
 
   # Predict suitability
-  apicalis_prediction1 <- predict_raster(apicalis_ensemble, climate_snapshot)
+ apicalis_prediction_raster <- predict_raster_ensemble(apicalis_ensemble, climate_snapshot)
+
 
   # Create plot
   p <- ggplot() +
