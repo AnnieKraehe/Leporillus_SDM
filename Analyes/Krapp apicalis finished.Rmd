@@ -1697,4 +1697,142 @@ lapply(c("tidysdm", "tidymodels", "workflowsets", "workflows", "tune", "parsnip"
          "infer", "readr", "fs", "gtools", "RefManageR"), 
        function(pkg) { cat("\n---", pkg, "---\n"); print(citation(pkg)) })
 
+
+```
+
+```{r}
+# =============================
+# Range shift 0 ka – 20 ka with centroid trajectory (single panel)
+# Aesthetics aligned with other maps; clear legends; fully commented
+# =============================
+suppressPackageStartupMessages({
+  library(terra)
+  library(sf)
+  library(dplyr)
+  library(ggplot2)
+  library(viridis)
+  library(tidyterra)
+  library(rworldmap)
+})
+
+# ---- Inputs assumed ----
+stopifnot(exists("apicalis_spatrast"), exists("apicalis_centroids"), exists("results_dir"))
+
+# ---- 1) Pick slices nearest to 20 ka and 0 ka ----
+r_times <- as.numeric(terra::time(apicalis_spatrast))
+idx_20  <- which.min(abs(r_times - (-20000)))
+idx_0   <- which.min(abs(r_times - 0))
+r_20    <- apicalis_spatrast[[idx_20]]
+r_0     <- apicalis_spatrast[[idx_0]]
+
+# ---- 2) Compute difference map (present − 20 ka) ----
+r_diff  <- r_0 - r_20
+names(r_diff) <- "diff"
+
+# Robust symmetric limits (98th percentile) so outliers don’t dominate the palette
+vals <- terra::values(r_diff, mat = FALSE)
+lims <- quantile(abs(vals), probs = 0.98, na.rm = TRUE) |> as.numeric()
+lims <- max(0.1, min(1, lims))  # clamp sensibly within [0.1, 1]
+
+# Divergent scale: blue = contraction, red = expansion
+fill_scale <- scale_fill_gradient2(
+  name = "Change in suitability\nsince 20 ka",       # legend title for difference map
+  low = "#3B4CC0", mid = "white", high = "#B40426",
+  midpoint = 0, limits = c(-lims, lims)
+)
+
+# ---- 3) Base map & layout (match your other maps) ----
+aus_outline <- rworldmap::getMap(resolution = "high") |>
+  sf::st_as_sf() |>
+  dplyr::filter(ADMIN == "Australia")
+
+# Consistent frame
+xlim <- c(112, 150)
+ylim <- c(-40, -10)
+
+# Theme to match your existing figures
+theme_map_clean <- theme_minimal(base_size = 12) +
+  theme(
+    plot.background  = element_rect(fill = "white", colour = NA),
+    panel.background = element_rect(fill = "#F2F2F2", colour = NA),
+    panel.grid.major = element_line(colour = "white"),
+    panel.grid.minor = element_blank(),
+    axis.title       = element_text(size = 11),
+    axis.text        = element_text(size = 10),
+    legend.title     = element_text(size = 10),
+    legend.text      = element_text(size = 9),
+    # Place legends together on the right in a neat vertical stack
+    legend.position  = "right",
+    legend.box       = "vertical",
+    legend.box.just  = "top"
+  )
+
+# ---- 4) Identify centroid endpoints for the legend markers ----
+# Use base indexing to avoid dplyr::slice() issues on data.frame
+pt_20 <- apicalis_centroids[which.min(abs(apicalis_centroids$time_bp + 20000)), , drop = FALSE]
+pt_0  <- apicalis_centroids[which.min(abs(apicalis_centroids$time_bp - 0)),       , drop = FALSE]
+
+# ---- 5) Build single panel plot ----
+p_single <- ggplot() +
+  # Difference map (background)
+  geom_spatraster(data = r_diff, aes(fill = diff)) +
+  fill_scale +
+  # Australia outline
+  geom_sf(data = aus_outline, fill = NA, colour = "grey2
+          0", linewidth = 0.4) +
+  # Map window
+  coord_sf(xlim = xlim, ylim = ylim, expand = FALSE) +
+  # Centroid trajectory (path = black; points coloured by time)
+  geom_path(
+    data = apicalis_centroids, aes(longitude, latitude),
+    colour = "black", linewidth = 0.7, alpha = 0.85
+  ) +
+  geom_point(
+    data = apicalis_centroids,
+    aes(longitude, latitude, colour = time_bp),
+    size = 2
+  ) +
+  # Endpoints with shapes (triangle = 20 ka; circle = present)
+  geom_point(
+    data = pt_20, aes(longitude, latitude, shape = "20 ka centroid"),
+    size = 3, fill = "white", colour = "black", stroke = 0.6
+  ) +
+  geom_point(
+    data = pt_0,  aes(longitude, latitude, shape = "Present centroid"),
+    size = 3, fill = "yellow", colour = "black", stroke = 0.6
+  ) +
+  # Colourbar for time along the trajectory
+  scale_colour_viridis_c(
+    name   = "Years BP",      # <-- label added here
+    option = "H",
+    limits = c(-40000, 0),
+    breaks = c(-40000, -30000, -20000, -10000, 0),
+    labels = c("40 ka", "30 ka", "20 ka", "10 ka", "0")
+  ) +
+  # Shape legend for endpoints
+  scale_shape_manual(
+    name   = "Centroid positions",
+    values = c("20 ka centroid" = 24, "Present centroid" = 21)
+  ) +
+  # Axes labels (kept minimal)
+  labs(x = "Longitude", y = "Latitude") +
+  theme_map_clean +
+  # Make the two legends appear one above the other and tidy their titles
+  guides(
+    fill   = guide_colourbar(title.position = "top", order = 1),
+    colour = guide_colourbar(title.position = "top", order = 2),
+    shape  = guide_legend(title.position  = "top",  order = 3)
+  )
+
+# Preview
+print(p_single)
+
+# ---- 6) Save figure ----
+ggsave(
+  filename = file.path(results_dir, "figure_range_shift_single.png"),
+  plot = p_single,
+  width = 7.5, height = 6.5, dpi = 300, bg = "white"
+)
+
+
 ```
