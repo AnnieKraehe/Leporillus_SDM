@@ -1,0 +1,963 @@
+---
+title: "test"
+author: "Annie"
+date: "2025-10-30"
+output: html_document
+---
+
+---
+title: "Krapp conditor"
+author: "Annie"
+date: "2025-03-14"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+# Knit-time defaults
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
+set.seed(42)
+```
+
+# Install packages (optional)
+```{r install-packages, eval=FALSE}
+# Prefer renv for reproducibility; this is a convenience fallback only.
+if (!requireNamespace("devtools", quietly = TRUE)) install.packages("devtools")
+
+packages <- c(
+  "DALEX", "RefManageR", "USE", "broom", "car", "cowplot", "devtools", "dials",
+  "dplyr", "ecospat", "fs", "ggplot2", "grid", "gtools", "here", "infer",
+  "knitr", "magick", "modeldata", "oz", "parsnip", "pastclim", "patchwork",
+  "purrr", "readr", "recipes", "rnaturalearth", "rnaturalearthdata", "rsample",
+  "rworldmap", "rworldxtra", "scales", "sf", "spatialsample", "terra", "tibble",
+  "tidymodels", "tidysdm", "tidyterra", "tidyverse", "tidyr", "tune", "viridis",
+  "viridisLite", "workflowsets", "workflows", "yardstick"
+)
+
+for (pkg in packages) {
+  if (!requireNamespace(pkg, quietly = TRUE)) {
+    if (pkg == "pastclim") {
+      devtools::install_local("C:/github/pastclim")
+    } else if (pkg == "USE") {
+      devtools::install_github("danddr/USE")
+    } else {
+      install.packages(pkg)
+    }
+  }
+}
+```
+
+# Libraries
+```{r libraries}
+suppressPackageStartupMessages({
+  library(DALEX); library(RefManageR); library(USE)
+  library(broom);  library(car);       library(cowplot)
+  library(dials);  library(dplyr);     library(ecospat)
+  library(fs);     library(ggplot2);   library(grid)
+  library(gtools); library(here);      library(infer)
+  library(knitr);  library(magick);    library(modeldata)
+  library(oz);     library(parsnip);   library(pastclim)
+  library(patchwork); library(purrr);  library(readr)
+  library(recipes); library(rnaturalearth); library(rnaturalearthdata)
+  library(rsample); library(rworldmap); library(rworldxtra)
+  library(scales);  library(sf);       library(spatialsample)
+  library(terra);   library(tibble);   library(tidymodels)
+  library(tidysdm); library(tidyterra); library(tidyverse)
+  library(tidyr);   library(tune);     library(viridis)
+  library(viridisLite); library(workflowsets); library(workflows)
+  library(yardstick)
+})
+```
+
+# Project paths
+```{r paths}
+# Make sure this file path matches the actual location
+here::i_am("Analyses/Krapp conditor2.Rmd")
+
+results_dir   <- here("Results/stratified environmental sampling", "conditor")
+processed_dir <- here("Data", "processed")
+if (!dir.exists(results_dir)) dir.create(results_dir, recursive = TRUE)
+```
+
+# Globals (shared objects)
+```{r globals}
+# Australia outline and plotting helpers, defined once and reused
+world_map <- rworldmap::getMap(resolution = "high")
+australia_outline <- sf::st_as_sf(world_map) |>
+  dplyr::filter(ADMIN == "Australia")
+
+Aust_extent <- terra::ext(110, 152.5, -42.5, -7.5)
+xlim <- c(112, 150); ylim <- c(-40, -10)
+
+theme_map_clean <- theme_minimal(base_size = 12) +
+  theme(
+    plot.background  = element_rect(fill = "white", colour = NA),
+    panel.background = element_rect(fill = "#F2F2F2", colour = NA),
+    panel.grid.major = element_line(colour = "white"),
+    panel.grid.minor = element_blank()
+  )
+```
+
+# Data: download Krapp2021
+```{r download-climate}
+pastclim::download_dataset("Krapp2021")
+```
+
+# Read *conditor* occurrences
+```{r read-conditor}
+conditor <- readr::read_csv(file.path(processed_dir, "conditor.csv")) |>
+  {print(.); .} |>
+  sf::st_as_sf(coords = c("longitude", "latitude"), crs = 4326)
+```
+
+# Land mask (0 ka)
+```{r land-mask}
+land_mask_current <- pastclim::get_land_mask(time_bp = 0, dataset = "Krapp2021") |>
+  terra::crop(terra::vect(Aust_extent)) |>
+  terra::aggregate(fact = 5, fun = "mean", na.rm = TRUE)
+```
+
+# Quick map of occurrences
+```{r plot-occurrences}
+ ggplot() +
+   tidyterra::geom_spatraster(data = land_mask_current, aes()) +
+   tidyterra::scale_fill_terrain_c() +
+   geom_sf(data = conditor, aes(col = time_bp)) +
+   coord_sf(xlim = xlim, ylim = ylim)
+```
+
+# Climate time series (Krapp2021)
+```{r climate-series}
+climate_vars <- c("bio05","bio06","bio12")
+climate_full <- pastclim::region_series(
+  bio_variables = climate_vars,
+  data = "Krapp2021",
+  crop = terra::vect(Aust_extent)
+)
+```
+
+# Spatial filtering
+```{r spatial-filter}
+set.seed(123)
+conditor <- thin_by_dist(conditor, dist_min = km2m(50))
+NROW(conditor)
+```
+
+# Pseudo-absence sampling in environmental space
+```{r env-space-setup}
+# 1950 slice (index 800 typically corresponds to ~0 BP in Krapp2021)
+env_space_1950 <- c(climate_full[[1]][[800]], climate_full[[2]][[800]], climate_full[[3]][[800]])
+```
+
+```{r pseudo-abs-env}
+library(scales)  # for alpha()
+conditor3 <- paSampling(
+  env.rast = env_space_1950,
+  pres     = conditor %>% dplyr::filter(time_bp == -300),
+  thres    = 0.75,
+  n.tr     = 9,
+  grid.res = 9
+) |>
+  sf::st_drop_geometry()
+
+pseudoabsence_map <- ggplot() +
+  geom_sf(data = australia_outline, fill = alpha("#C4C4C4", 0.5), colour = "grey50") +
+  geom_point(data = conditor3,
+             aes(x, y, shape = "Pseudo Absence", fill = "Pseudo Absence"),
+             colour = "black", size = 2.5, stroke = 0.3) +
+  geom_sf(data = conditor |> dplyr::filter(time_bp == -300),
+          aes(fill = "Presence", shape = "Presence"),
+          colour = "black", size = 2.5, stroke = 0.3) +
+  scale_fill_manual(values = c("Presence" = "#A100FA", "Pseudo Absence" = "#FF7E1D"), name = "Legend") +
+  scale_shape_manual(values = c("Presence" = 24, "Pseudo Absence" = 21), name = "Legend") +
+  coord_sf(xlim = c(110, 155), ylim = c(-45, -10), expand = FALSE) +
+  scale_x_continuous(breaks = seq(110, 155, by = 5)) +
+  scale_y_continuous(breaks = seq(-45, -10, by = 5)) +
+  labs(title = "Pseudo Absences in Environmental Space", x = "Longitude", y = "Latitude") +
+  theme_minimal(base_size = 12) +
+  theme(
+    plot.background = element_rect(fill = "white", colour = NA),
+    panel.background = element_rect(fill = "#F2F2F2", colour = NA),
+    panel.grid.major = element_line(colour = "#C4C4C4", linewidth = 0.3),
+    panel.grid.minor = element_line(colour = "#C4C4C4", linewidth = 0.2),
+    panel.border     = element_rect(colour = "#C4C4C4", fill = NA, linewidth = 0.3)
+  )
+
+ggsave(file.path(results_dir, "pseudo_absences_envspace.png"), pseudoabsence_map,
+       width = 6, height = 5, dpi = 300, bg = "white")
+```
+
+# Extract climate for points
+```{r extract-climate}
+conditor_df <- conditor |>
+  dplyr::bind_cols(sf::st_coordinates(conditor)) |>
+  dplyr::rename(x = X, y = Y) |>
+  dplyr::mutate(percP = "pres") |>
+  dplyr::bind_rows(conditor3) |>
+  dplyr::mutate(time_bp = -300) |>
+  as.data.frame() |>
+  dplyr::select(-geometry)
+
+conditor_df <- location_slice_from_region_series(conditor_df, region_series = climate_full)
+```
+
+# Add climate back and cast to sf
+```{r add-climate-sf}
+conditor4 <- conditor |>
+  dplyr::bind_cols(sf::st_coordinates(conditor)) |>
+  dplyr::rename(x = X, y = Y) |>
+  dplyr::mutate(percP = "pres") |>
+  dplyr::bind_rows(conditor3) |>
+  dplyr::mutate(time_bp = -300) |>
+  as.data.frame() |>
+  dplyr::select(-geometry) |>
+  dplyr::bind_cols(conditor_df[, c("bio05", "bio06", "bio12")]) |>
+  dplyr::filter(!is.na(.data$bio05)) |>
+  dplyr::mutate(percP = dplyr::if_else(percP == "pabs", "pseudoabsence", "presence")) |>
+  sf::st_as_sf(coords = c("x", "y"), crs = 4326)
+```
+
+# Recipe
+```{r recipe}
+conditor_rec <- recipes::recipe(conditor4, formula = percP ~ bio05 + bio06 + bio12)
+conditor_rec
+```
+
+# Models & workflows
+```{r models}
+conditor_models <- workflowsets::workflow_set(
+  preproc = list(default = conditor_rec),
+  models  = list(
+    glm = sdm_spec_glm(),
+    gam = sdm_spec_gam(),
+    rf  = sdm_spec_rf(),
+    gbm = sdm_spec_boost_tree()
+  ),
+  cross = TRUE
+) |>
+  update_workflow_model(
+    "default_gam",
+    spec = sdm_spec_gam(),
+    formula = percP ~ s(bio05, k = 10) + s(bio06, k = 10) + s(bio12, k = 10)
+  ) |>
+  option_add(control = control_ensemble_grid())
+```
+
+# Spatial block CV
+```{r cv}
+set.seed(1005)
+conditor_cv <- spatial_block_cv(conditor4, v = 5)
+autoplot(conditor_cv)
+```
+
+# Tune
+```{r tune}
+set.seed(123)
+conditor_models <- conditor_models |>
+  workflow_map("tune_grid",
+               resamples = conditor_cv,
+               grid = 5,
+               metrics = sdm_metric_set(),
+               verbose = TRUE)
+```
+
+# Build ensemble & inspect choices
+```{r ensemble}
+conditor_ensemble <- simple_ensemble() |>
+  add_member(conditor_models, metric = "tss_max")
+
+chosen <- conditor_models |>
+  dplyr::mutate(
+    best = purrr::map(result, ~ tune::select_best(.x, metric = "tss_max")),
+    tss  = purrr::map_dbl(result, ~ tune::show_best(.x, metric = "tss_max", n = 1)$mean),
+    best = purrr::map_chr(best, ~ paste(names(.x), .x, sep = "=", collapse = "; "))
+  ) |>
+  dplyr::transmute(wflow_id, best, tss)
+print(chosen)
+
+# Fold-level performance boxplots
+workflow_labels <- c(
+  default_gam = "Generalised Additive Model",
+  default_gbm = "Boosted Tree",
+  default_glm = "Generalised Linear Model",
+  default_rf  = "Random Forest"
+)
+model_order <- c("Generalised Additive Model", "Boosted Tree", "Generalised Linear Model", "Random Forest")
+metric_labels <- c(boyce_cont = "Boyce Index", roc_auc = "AUC", tss_max = "TSS")
+colour_map <- c(
+  "Generalised Additive Model" = "#FF61C3",
+  "Boosted Tree"               = "#00B140",
+  "Generalised Linear Model"   = "#00BFFF",
+  "Random Forest"              = "#BC43FF"
+)
+
+perf_data <- conditor_models |>
+  dplyr::mutate(metrics = purrr::map(result, collect_metrics, summarize = FALSE)) |>
+  dplyr::select(wflow_id, metrics) |>
+  tidyr::unnest(metrics) |>
+  dplyr::filter(.metric %in% names(metric_labels)) |>
+  dplyr::mutate(
+    model        = factor(workflow_labels[wflow_id], levels = model_order),
+    metric_label = factor(metric_labels[.metric], levels = c("Boyce Index", "AUC", "TSS"))
+  )
+
+perf_plot <- ggplot(perf_data, aes(x = model, y = .estimate, fill = model)) +
+  geom_boxplot(width = 0.6, alpha = 0.9, outlier.shape = NA) +
+  geom_jitter(aes(colour = model), size = 1.3, width = 0.15, alpha = 0.4, stroke = 0.3, shape = 21) +
+  scale_fill_manual(values = colour_map, name = "Model Type") +
+  scale_colour_manual(values = rep("black", length(model_order)), guide = "none") +
+  facet_wrap(~ metric_label, scales = "free_y") +
+  labs(title = "Model performance across algorithms (fold-level)", x = NULL, y = "Performance metric") +
+  theme_minimal(base_size = 12) +
+  theme(
+    panel.background  = element_rect(fill = "#EEEEEE", colour = NA),
+    plot.background   = element_rect(fill = "white", colour = NA),
+    panel.grid.major  = element_line(colour = "white"),
+    panel.grid.minor  = element_blank(),
+    axis.text.x       = element_blank(),
+    axis.ticks.x      = element_blank(),
+    legend.position   = "right",
+    legend.direction  = "vertical",
+    legend.title      = element_text(size = 11),
+    legend.text       = element_text(size = 10),
+    plot.title        = element_text(face = "bold", size = 13),
+    strip.text        = element_text(margin = margin(b = 5))
+  )
+
+ggsave(file.path(results_dir, "ensemble", "ensemble_performance_clean.png"), perf_plot,
+       width = 8, height = 5, dpi = 300)
+perf_plot
+```
+
+# LGM snapshot
+```{r lgm}
+climate_lgm <- terra::rast(list(climate_full[[1]][[779]], climate_full[[2]][[779]], climate_full[[3]][[779]]))
+names(climate_lgm) <- c("bio05", "bio06", "bio12")
+
+prediction_lgm <- predict_raster(conditor_ensemble, climate_lgm)
+
+ggplot() +
+  tidyterra::geom_spatraster(data = prediction_lgm, aes(fill = mean)) +
+  tidyterra::scale_fill_terrain_c(name = "Probability\nof occurrence") +
+  coord_sf(xlim = xlim, ylim = ylim)
+```
+
+# Save model as SpatRaster stack
+```{r save-stack}
+conditor_spatrast <- NULL
+purrr::walk(760:800, function(timestep) {
+  year_bp <- time(climate_full[[1]])[timestep] - 1950
+  climate_snapshot <- terra::rast(list(
+    climate_full[[1]][[timestep]],
+    climate_full[[2]][[timestep]],
+    climate_full[[3]][[timestep]]
+  ))
+  names(climate_snapshot) <- c("bio05", "bio06", "bio12")
+  prediction_raster <- predict_raster(conditor_ensemble, climate_snapshot)
+  conditor_spatrast <<- if (is.null(conditor_spatrast)) prediction_raster else c(conditor_spatrast, prediction_raster)
+})
+
+time(conditor_spatrast) <- time(climate_full[[1]])[760:800] - 1950
+
+output_dir <- here("Results", "conditor Krapp model")
+if (!dir.exists(output_dir)) dir.create(output_dir, recursive = TRUE)
+writeRaster(conditor_spatrast, filename = file.path(output_dir, "predictions_stack.tif"), overwrite = TRUE)
+```
+
+# Stack o' maps
+```{r stack-o-maps, dependson="globals"}
+suppressPackageStartupMessages({ library(magick) })
+stopifnot(exists("australia_outline"), exists("results_dir"), exists("climate_full"), exists("conditor_ensemble"))
+
+out_dir <- file.path(results_dir, "model"); if (!dir.exists(out_dir)) dir.create(out_dir, recursive = TRUE)
+
+purrr::walk(760:800, function(timestep) {
+  year_bp <- time(climate_full[[1]])[timestep] - 1950
+  climate_snapshot <- terra::rast(list(
+    climate_full[[1]][[timestep]],
+    climate_full[[2]][[timestep]],
+    climate_full[[3]][[timestep]]
+  ))
+  names(climate_snapshot) <- c("bio05", "bio06", "bio12")
+  prediction_raster <- predict_raster(conditor_ensemble, climate_snapshot)
+
+  p <- ggplot() +
+    tidyterra::geom_spatraster(data = prediction_raster, aes(fill = mean)) +
+    tidyterra::scale_fill_terrain_c(name = "Probability\nof occurrence") +
+    geom_sf(data = australia_outline, fill = NA, colour = "grey20", linewidth = 0.3) +
+    coord_sf(xlim = xlim, ylim = ylim) +
+    ggtitle(bquote(italic("Leporillus conditor") * " — Years BP: " * .(year_bp))) +
+    theme_minimal() +
+    theme(
+      plot.background  = element_rect(fill = "white", colour = NA),
+      panel.background = element_rect(fill = "#F2F2F2", colour = NA),
+      panel.grid.major = element_line(colour = "#C4C4C4"),
+      panel.grid.minor = element_line(colour = "#C4C4C4"),
+      plot.margin      = margin(0, 0, 0, 0, unit = "pt")
+    )
+
+  plot_path <- file.path(out_dir, paste0("conditor_map_", year_bp, ".png"))
+  ggsave(plot_path, p, width = 7, height = 7, dpi = 300, bg = "transparent")
+
+  img <- image_read(plot_path)
+  img <- image_border(image_trim(img), colour = "white", geometry = "30x30")
+  image_write(img, path = plot_path)
+})
+```
+
+# 6-image panel (model only)
+```{r six-panel}
+# Requires: conditor_spatrast, australia_outline
+raster_times  <- terra::time(conditor_spatrast)
+target_times  <- c(-40000, -26000, -21000, -12000, -6000, 0)
+matched_idx   <- match(target_times, raster_times)
+panel_tags    <- letters[seq_along(target_times)]
+
+panel_plots <- pmap(
+  list(idx = matched_idx, year = target_times, tag = panel_tags),
+  function(idx, year_bp, tag_label) {
+    current_prediction <- conditor_spatrast[[idx]]
+    ggplot() +
+      tidyterra::geom_spatraster(data = current_prediction, aes(fill = mean)) +
+      tidyterra::scale_fill_terrain_c(name = "Probability\nof occurrence", limits = c(0, 1)) +
+      geom_sf(data = australia_outline, fill = NA, colour = "grey20", linewidth = 0.3) +
+      coord_sf(xlim = xlim, ylim = ylim) +
+      scale_y_continuous(breaks = seq(-40, -10, by = 4)) +
+      scale_x_continuous(breaks = seq(112, 150, by = 8)) +
+      ggtitle(bquote("(" * .(tag_label) * ")  Years BP: " * .(year_bp))) +
+      theme_minimal(base_size = 10) +
+      theme(
+        panel.background = element_rect(fill = "#DCF3FC", colour = NA),
+        plot.background  = element_rect(fill = "white", colour = NA),
+        panel.grid.major = element_line(colour = "white"),
+        panel.grid.minor = element_blank(),
+        axis.text        = element_text(size = 8),
+        axis.title       = element_blank(),
+        plot.margin      = margin(2, 2, 2, 2),
+        legend.position  = "right",
+        legend.title     = element_text(size = 11),
+        legend.text      = element_text(size = 11)
+      )
+  }
+)
+
+final_panel <- wrap_plots(panel_plots, ncol = 2, guides = "collect") +
+  plot_annotation(title = expression(italic("Leporillus conditor") * " SDM model predictions"),
+                  theme = theme(plot.title = element_text(size = 14, face = "bold", hjust = 0.5)))
+
+ggsave(file.path(results_dir, "conditor_model_panel.png"), final_panel, width = 10, height = 9, dpi = 300)
+```
+
+# Centroid through time & diff map (0 vs 20 ka)
+```{r centroid-diff, dependson="globals"}
+# Compute centroids
+conditor_centroids <- lapply(1:nlyr(conditor_spatrast), function(i) {
+  r <- conditor_spatrast[[i]]
+  vals <- terra::values(r)[, 1]
+  coords <- terra::crds(r, na.rm = FALSE)
+  valid <- !is.na(vals) & vals > 0
+  if (!any(valid)) return(NULL)
+  w <- vals[valid]; cxy <- coords[valid, ]
+  data.frame(time_bp = time(conditor_spatrast)[i],
+             longitude = sum(cxy[,1] * w) / sum(w),
+             latitude  = sum(cxy[,2] * w) / sum(w))
+}) |>
+  dplyr::bind_rows()
+
+# Difference map present - 20 ka
+r_times <- as.numeric(terra::time(conditor_spatrast))
+idx_20  <- which.min(abs(r_times - (-20000)))
+idx_0   <- which.min(abs(r_times - 0))
+r_diff  <- conditor_spatrast[[idx_0]] - conditor_spatrast[[idx_20]]
+
+vals <- terra::values(r_diff, mat = FALSE)
+lims <- quantile(abs(vals), 0.98, na.rm = TRUE) |> as.numeric()
+lims <- max(0.1, min(1, lims))
+
+fill_scale <- scale_fill_gradient2(
+  name = "Change in suitability\nsince 20 ka",
+  low = "#3B4CC0", mid = "white", high = "#B40426",
+  midpoint = 0, limits = c(-lims, lims)
+)
+
+pt_20 <- conditor_centroids[which.min(abs(conditor_centroids$time_bp + 20000)), , drop = FALSE]
+pt_0  <- conditor_centroids[which.min(abs(conditor_centroids$time_bp - 0)),       , drop = FALSE]
+
+p_single <- ggplot() +
+  tidyterra::geom_spatraster(data = r_diff, aes(fill = diff)) +
+  fill_scale +
+  geom_sf(data = australia_outline, fill = NA, colour = "grey20", linewidth = 0.4) +
+  coord_sf(xlim = xlim, ylim = ylim, expand = FALSE) +
+  geom_path(data = conditor_centroids, aes(longitude, latitude), colour = "black", linewidth = 0.7, alpha = 0.85) +
+  geom_point(data = conditor_centroids, aes(longitude, latitude, colour = time_bp), size = 2) +
+  geom_point(data = pt_20, aes(longitude, latitude, shape = "20 ka centroid"), size = 3, fill = "white", colour = "black", stroke = 0.6) +
+  geom_point(data = pt_0,  aes(longitude, latitude, shape = "Present centroid"), size = 3, fill = "yellow", colour = "black", stroke = 0.6) +
+  scale_color_viridis_c(name = "Years BP", option = "H",
+                        limits = c(-40000, 0), breaks = c(-40000, -30000, -20000, -10000, 0),
+                        labels = c("40 ka", "30 ka", "20 ka", "10 ka", "0")) +
+  scale_shape_manual(name = "Centroid positions", values = c("20 ka centroid" = 24, "Present centroid" = 21)) +
+  labs(x = "Longitude", y = "Latitude") +
+  theme_map_clean +
+  guides(fill = guide_colorbar(title.position = "top", order = 1),
+         colour = guide_colorbar(title.position = "top", order = 2),
+         shape  = guide_legend(title.position  = "top", order = 3))
+
+ggsave(file.path(results_dir, "figure_range_shift_single.png"), p_single, width = 7.5, height = 6.5, dpi = 300, bg = "white")
+```
+
+# Middens validation prep
+```{r middens-load}
+dated_middens <- read.csv(file.path(processed_dir, "datedmiddens.csv"))
+
+middens_sf <- dated_middens |>
+  sf::st_as_sf(coords = c("longitude", "latitude"), crs = 4326) |>
+  sf::st_transform(crs = terra::crs(conditor_spatrast))
+
+middens_vect <- terra::vect(middens_sf)
+rt <- as.numeric(terra::time(conditor_spatrast))
+
+middens_sf <- middens_sf |>
+  dplyr::mutate(
+    binned_time_bp = sapply(time_bp, function(x) rt[which.min(abs(rt - x))]),
+    nearest_idx    = match(binned_time_bp, rt),
+    lubridate_time = pastclim::ybp2date(time_bp)
+  )
+
+extracted_values <- terra::extract(conditor_spatrast, middens_vect, ID = FALSE)
+vals_mat <- as.matrix(extracted_values)
+middens_sf$predicted <- vals_mat[cbind(seq_len(nrow(middens_sf)), middens_sf$nearest_idx)]
+
+raster_timesteps <- rt
+timesteps_df <- data.frame(raster_timestep = raster_timesteps)
+
+organized_data <- timesteps_df |>
+  dplyr::left_join(
+    middens_sf |>
+      dplyr::group_by(binned_time_bp) |>
+      dplyr::summarise(count = dplyr::n(), mean_value = mean(predicted, na.rm = TRUE), .groups = "drop"),
+    by = c("raster_timestep" = "binned_time_bp")
+  ) |>
+  dplyr::mutate(count = tidyr::replace_na(count, 0),
+                mean_value = tidyr::replace_na(mean_value, NA_real_))
+print(organized_data)
+```
+
+# Middens-overlaid maps (loop)
+```{r middens-maps, dependson="globals"}
+suppressPackageStartupMessages({ library(magick) })
+world_map <- rworldmap::getMap(resolution = "high")
+australia_outline <- sf::st_as_sf(world_map) %>% dplyr::filter(ADMIN == "Australia")
+
+raster_timesteps <- time(conditor_spatrast)
+walk(seq_along(raster_timesteps), function(i) {
+  current_year_bp <- raster_timesteps[i]
+  current_middens <- middens_sf %>% dplyr::filter(abs(time_bp - current_year_bp) <= 500)
+  current_prediction <- conditor_spatrast[[i]]
+
+  p <- ggplot() +
+    tidyterra::geom_spatraster(data = current_prediction, aes(fill = mean)) +
+    tidyterra::scale_fill_terrain_c(name = "Probability\nof occurrence") +
+    geom_sf(data = australia_outline, fill = NA, colour = "black", linewidth = 0.6) +
+    geom_sf(data = current_middens, shape = 21, fill = "#FF3399", colour = "black", size = 2, stroke = 0.4) +
+    coord_sf(xlim = xlim, ylim = ylim) +
+    ggtitle(bquote(italic("Leporillus conditor") * " SDM with Middens — Years BP: " * .(current_year_bp))) +
+    theme_minimal(base_size = 11) +
+    theme(
+      plot.background = element_rect(fill = "white", colour = NA),
+      panel.background = element_rect(fill = "#F2F2F2", colour = NA),
+      panel.grid.major = element_line(colour = "#C4C4C4"),
+      panel.grid.minor = element_line(colour = "#C4C4C4"),
+      plot.margin = margin(0, 0, 0, 0, "pt")
+    )
+
+  plot_path <- file.path(results_dir, "midden maps", paste0("conditor_middens_", current_year_bp, ".png"))
+  dir.create(dirname(plot_path), showWarnings = FALSE, recursive = TRUE)
+  ggsave(plot_path, p, width = 7, height = 7, dpi = 300, bg = "white")
+
+  img <- magick::image_read(plot_path) |> magick::image_trim() |> image_border(colour = "white", geometry = "30x30")
+  magick::image_write(img, path = plot_path)
+})
+```
+
+# 6-panel with middens
+```{r six-panel-middens}
+raster_times <- terra::time(conditor_spatrast)
+target_times <- c(-28000, -15000, -12000, -7000, -4000, 0)
+matched_indices <- match(target_times, raster_times)
+panel_tags <- letters[seq_along(target_times)]
+
+panel_plots <- pmap(
+  list(idx = matched_indices, year = target_times, tag = panel_tags),
+  function(idx, year_bp, tag_label) {
+    current_prediction <- conditor_spatrast[[idx]]
+    current_middens <- middens_sf %>% dplyr::filter(abs(time_bp - year_bp) <= 500) %>% dplyr::mutate(type = "Midden")
+
+    ggplot() +
+      tidyterra::geom_spatraster(data = current_prediction, aes(fill = mean)) +
+      tidyterra::scale_fill_terrain_c(name = "Probability\nof occurrence", limits = c(0, 1)) +
+      geom_sf(data = australia_outline, fill = NA, colour = "black", linewidth = 0.5) +
+      geom_sf(data = current_middens, aes(colour = type, shape = type), fill = "#FF3399", size = 2, stroke = 0.4, show.legend = TRUE) +
+      scale_colour_manual(name = NULL, values = c("Midden" = "black")) +
+      scale_shape_manual(name = NULL, values = c("Midden" = 21)) +
+      coord_sf(xlim = xlim, ylim = ylim) +
+      scale_y_continuous(breaks = seq(-40, -10, by = 4)) +
+      scale_x_continuous(breaks = seq(112, 150, by = 8)) +
+      ggtitle(bquote("(" * .(tag_label) * ")  Years BP: " * .(abs(year_bp)))) +
+      theme(
+        plot.background   = element_rect(fill = "white", colour = NA),
+        panel.background  = element_rect(fill = "#E8E8E8", colour = NA),
+        panel.grid.major  = element_line(colour = "#C4C4C4"),
+        panel.grid.minor  = element_line(colour = "#C4C4C4"),
+        axis.text         = element_text(size = 8),
+        axis.title        = element_blank(),
+        plot.margin       = margin(2, 2, 2, 2),
+        legend.position   = "bottom",
+        legend.box        = "horizontal",
+        legend.justification = "center",
+        legend.spacing.x  = unit(1.2, "cm"),
+        legend.spacing.y  = unit(0.4, "cm"),
+        legend.key        = element_rect(fill = "transparent", colour = NA),
+        legend.title      = element_text(size = 11),
+        legend.text       = element_text(size = 11)
+      ) +
+      guides(
+        fill = guide_colorbar(title = "Probability of occurrence", title.position = "top",
+                              title.theme = element_text(size = 11), label.theme = element_text(size = 11),
+                              direction = "horizontal", barwidth = unit(5, "cm"), barheight = unit(0.4, "cm")),
+        colour = guide_legend(override.aes = list(size = 2.5), title.theme = element_text(size = 11), label.theme = element_text(size = 11)),
+        shape  = guide_legend(title.theme = element_text(size = 11), label.theme = element_text(size = 11))
+      )
+  }
+)
+
+final_panel <- wrap_plots(panel_plots, ncol = 2, guides = "collect") +
+  plot_annotation(title = "Leporillus conditor SDM with middens",
+                  theme = theme(plot.title = element_text(size = 14, face = "bold", hjust = 0.5))) &
+  theme(legend.position = "bottom", legend.box = "horizontal", legend.justification = "center",
+        legend.spacing.x = unit(1.2, "cm"), legend.spacing.y = unit(0.4, "cm"), legend.key = element_rect(fill = "transparent", colour = NA))
+
+ggsave(file.path(results_dir, "midden_panel_plot.png"), final_panel, width = 10, height = 9, dpi = 300)
+```
+
+# Threshold, pseudo-absences (time-aware), and evaluation
+```{r tss-maxsss}
+# Initial threshold for bootstrapping pseudo-absences
+threshold_init <- 0.27
+conditor_binary_init <- terra::app(x = conditor_spatrast, fun = \(i) i > threshold_init)
+terra::time(conditor_binary_init) <- terra::time(conditor_spatrast) |> pastclim::ybp2date()
+conditor_rs_init <- terra::sds(conditor_binary_init); names(conditor_rs_init) <- "pres_abs"
+
+pseudoabs_init <- sample_pseudoabs_time(
+  data            = dated_middens,
+  raster          = conditor_rs_init,
+  n_per_presence  = 3,
+  time_col        = "time_bp",
+  lubridate_fun   = pastclim::ybp2date,
+  method          = c("dist_min", km2m(200)),
+  time_buffer     = 365000 * 2
+)
+
+# Extract continuous predictions matched to each row's nearest timestep
+rt <- as.numeric(terra::time(conditor_spatrast))
+
+presence_sf <- sf::st_as_sf(dated_middens, coords = c("longitude", "latitude"), crs = 4326) |>
+  sf::st_transform(crs(conditor_spatrast)) |>
+  dplyr::mutate(nearest_time = sapply(time_bp, function(x) rt[which.min(abs(rt - x))]),
+                nearest_idx  = match(nearest_time, rt))
+
+pres_mat <- terra::extract(conditor_spatrast, terra::vect(presence_sf), ID = FALSE)
+presence_vals <- as.matrix(pres_mat)[cbind(seq_len(nrow(presence_sf)), presence_sf$nearest_idx)]
+
+pseudoabs_sf <- sf::st_as_sf(pseudoabs_init, coords = c("longitude", "latitude"), crs = 4326) |>
+  sf::st_transform(crs(conditor_spatrast)) |>
+  dplyr::mutate(time_bp = pastclim::date2ybp(time_step),
+                nearest_time = sapply(time_bp, function(x) rt[which.min(abs(rt - x))]),
+                nearest_idx  = match(nearest_time, rt))
+
+pseudo_mat <- terra::extract(conditor_spatrast, terra::vect(pseudoabs_sf), ID = FALSE)
+pseudoabs_vals <- as.matrix(pseudo_mat)[cbind(seq_len(nrow(pseudoabs_sf)), pseudoabs_sf$nearest_idx)]
+
+predicted_values <- c(presence_vals, pseudoabs_vals)
+observed <- c(rep(1, length(presence_vals)), rep(0, length(pseudoabs_vals)))
+keep <- is.finite(predicted_values) & is.finite(observed)
+predicted_values <- predicted_values[keep]; observed <- observed[keep]
+
+# MaxSSS grid search
+thresholds <- seq(0, 1, by = 0.01)
+results <- data.frame(threshold = thresholds, TSS = NA_real_)
+for (i in seq_along(thresholds)) {
+  thr <- thresholds[i]
+  pred_binary <- ifelse(predicted_values > thr, 1L, 0L)
+  a <- sum(pred_binary == 1L & observed == 1L)
+  b <- sum(pred_binary == 1L & observed == 0L)
+  c <- sum(pred_binary == 0L & observed == 1L)
+  d <- sum(pred_binary == 0L & observed == 0L)
+  if ((a + c) == 0 || (b + d) == 0) next
+  sens <- a / (a + c); spec <- d / (b + d)
+  results$TSS[i] <- sens + spec - 1
+}
+opt_threshold <- results$threshold[which.max(results$TSS)]
+cat("Optimal Threshold (maxSSS):", opt_threshold, "\n")
+
+# Rebuild binary stack at optimal threshold
+conditor_binary <- terra::app(x = conditor_spatrast, fun = \(i) i > opt_threshold)
+terra::time(conditor_binary) <- terra::time(conditor_spatrast) |> pastclim::ybp2date()
+conditor_rs <- terra::sds(conditor_binary); names(conditor_rs) <- "pres_abs"
+
+pseudoabs <- sample_pseudoabs_time(
+  data            = dated_middens,
+  raster          = conditor_rs,
+  n_per_presence  = 3,
+  time_col        = "time_bp",
+  lubridate_fun   = pastclim::ybp2date,
+  method          = c("dist_min", km2m(200)),
+  time_buffer     = 365000 * 2
+)
+
+# Evaluate (TSS, Sørensen, F2)
+pres_abs_observed <- pseudoabs |>
+  dplyr::mutate(time_bp = pastclim::date2ybp(time_step)) |>
+  dplyr::select(-class, -time_step) |>
+  tibble::rowid_to_column("name")
+
+pres_abs_pred <- location_slice_from_region_series(x = pres_abs_observed, region_series = conditor_rs)
+pres_abs_pred$class <- pseudoabs$class
+
+a <- nrow(dplyr::filter(pres_abs_pred, class == "presence",  pres_abs == 1))
+b <- nrow(dplyr::filter(pres_abs_pred, class == "pseudoabs", pres_abs == 1))
+c <- nrow(dplyr::filter(pres_abs_pred, class == "presence",  pres_abs == 0))
+d <- nrow(dplyr::filter(pres_abs_pred, class == "pseudoabs", pres_abs == 0))
+
+tpr <- a / (a + c); tnr <- d / (b + d)
+tss <- tpr + tnr - 1
+sorensen <- 2 * (a / (c + (2 * a) + d))
+precision <- a / (a + b)
+f2score <- 2 * ((precision * tpr) / (precision + tpr))
+
+cat(sprintf("True Skill Statistic: %.3f\n", tss))
+cat(sprintf("Sorensen: %.3f\n", sorensen))
+cat(sprintf("F2 score: %.3f\n", f2score))
+```
+
+# Panels (a) & (b): histograms (full vs coarse) and persistence
+```{r hist-panels}
+suppressPackageStartupMessages({ library(cowplot) })
+stopifnot(inherits(conditor_spatrast, "SpatRaster"), inherits(middens_sf, "sf"), dir.exists(results_dir))
+
+step_years <- 1000
+rt <- as.numeric(terra::time(conditor_spatrast))
+thr_a <- if (exists("opt_threshold")) opt_threshold else 0.27
+thr_b <- 0.35
+lookback_ka <- 30
+include_current <- TRUE
+coarse_factor <- 2
+w_single <- 7; h_single <- 5; dpi_out <- 300
+
+res_full_deg   <- terra::res(conditor_spatrast)[1]
+res_coarse_deg <- res_full_deg * coarse_factor
+
+ensure_time_cols <- function(m_sf, rt) {
+  if (!all(c("binned_time_bp","nearest_idx") %in% names(m_sf))) {
+    m_sf <- m_sf %>% dplyr::mutate(
+      binned_time_bp = sapply(time_bp, function(x) rt[which.min(abs(rt - x))]),
+      nearest_idx    = match(binned_time_bp, rt)
+    )
+  }
+  m_sf
+}
+
+fd_bin_count <- function(x) {
+  x <- x[is.finite(x)]; if (!length(x)) return(30L)
+  fd_bw <- 2 * IQR(x, na.rm = TRUE) / (length(x)^(1/3))
+  max(20, min(60, round(1 / max(min(fd_bw, 0.08), 0.02))))
+}
+
+time_matched_background <- function(m_sf, rast){
+  rt <- as.numeric(terra::time(rast))
+  m_sf <- ensure_time_cols(m_sf, rt)
+  split(m_sf, m_sf$binned_time_bp) |>
+    lapply(function(df_i){
+      tb  <- unique(df_i$binned_time_bp)
+      lyr <- match(tb, rt)
+      n_i <- nrow(df_i)
+      vals <- terra::spatSample(rast[[lyr]], size = n_i, method = "random", values = TRUE, na.rm = TRUE)[,1] |> as.numeric()
+      tibble::tibble(suitability = vals, group = "Background (time-matched)", bin = tb)
+    }) |>
+    dplyr::bind_rows()
+}
+
+compute_persistence_strict <- function(rast, m_sf, thr, include_current, lookback_ka, step_years){
+  rt <- as.numeric(terra::time(rast))
+  m_sf <- ensure_time_cols(m_sf, rt)
+  mat <- terra::extract(rast, terra::vect(m_sf), ID = FALSE) |> as.matrix()
+  lookback_steps <- if (is.finite(lookback_ka)) as.integer(lookback_ka) else Inf
+  start_idx <- if (!include_current) pmax(m_sf$nearest_idx - 1L, 0L) else m_sf$nearest_idx
+  lead_true_count <- function(x){ n <- 0L; for (v in x) { if (isTRUE(v)) n <- n + 1L else break }; n }
+  steps <- vapply(seq_len(nrow(mat)), function(i){
+    idx <- start_idx[i]; if (idx <= 0L) return(0L)
+    from <- idx; to <- if (is.finite(lookback_steps)) max(idx - lookback_steps + 1L, 1L) else 1L
+    sidx <- seq(from, to, by = -1L)
+    above <- mat[i, sidx] > thr
+    lead_true_count(above)
+  }, integer(1))
+  tibble::tibble(persist_ka = steps * (step_years/1000))
+}
+
+middens_sf <- ensure_time_cols(middens_sf, rt)
+conditor_spatrast_coarse <- terra::aggregate(conditor_spatrast, fact = coarse_factor, fun = mean, na.rm = TRUE)
+terra::time(conditor_spatrast_coarse) <- terra::time(conditor_spatrast)
+
+mid_df_full <- tibble::tibble(suitability = sf::st_drop_geometry(middens_sf)$predicted, group = "Middens", bin = middens_sf$binned_time_bp)
+bg_df_full  <- time_matched_background(middens_sf, conditor_spatrast)
+plot_df_full <- dplyr::bind_rows(mid_df_full, bg_df_full) |> dplyr::filter(is.finite(suitability))
+bins_a_full <- fd_bin_count(mid_df_full$suitability)
+
+p_a_full <- ggplot(plot_df_full, aes(x = suitability, fill = group)) +
+  geom_histogram(position = "identity", alpha = 0.65, bins = bins_a_full, boundary = 0, colour = "white") +
+  geom_vline(xintercept = thr_a, linetype = "dashed", linewidth = 0.6) +
+  scale_fill_manual(values = c("Middens" = "#BC43FF", "Background (time-matched)" = "#9AA0A6")) +
+  scale_x_continuous(limits = c(0,1), breaks = seq(0,1,0.1)) +
+  labs(title = sprintf("Habitat suitability at dated midden locations (%.1f°)", terra::res(conditor_spatrast)[1]), x = "Modelled suitability (0–1)", y = "Count", fill = NULL) +
+  theme_minimal(base_size = 12) +
+  theme(plot.background = element_rect(fill = "white", colour = NA), panel.background = element_rect(fill = "#F2F2F2", colour = NA), panel.grid.major = element_line(colour = "white"), legend.position = "bottom")
+
+ggsave(file.path(results_dir, "panel_a_full_hist.png"), p_a_full, width = w_single, height = h_single, dpi = dpi_out, bg = "white")
+
+mid_vals_c <- terra::extract(conditor_spatrast_coarse, terra::vect(middens_sf), ID = FALSE) |> as.matrix()
+pick_idx   <- cbind(seq_len(nrow(mid_vals_c)), middens_sf$nearest_idx)
+mid_suit_c <- mid_vals_c[pick_idx] |> as.numeric()
+mid_df_c <- tibble::tibble(suitability = mid_suit_c, group = "Middens", bin = middens_sf$binned_time_bp)
+bg_df_c  <- time_matched_background(middens_sf, conditor_spatrast_coarse)
+plot_df_c <- dplyr::bind_rows(mid_df_c, bg_df_c) |> dplyr::filter(is.finite(suitability))
+bins_a_c  <- fd_bin_count(mid_df_c$suitability)
+
+p_a_coarse <- ggplot(plot_df_c, aes(x = suitability, fill = group)) +
+  geom_histogram(position = "identity", alpha = 0.65, bins = bins_a_c, boundary = 0, colour = "white") +
+  geom_vline(xintercept = thr_a, linetype = "dashed", linewidth = 0.6) +
+  scale_fill_manual(values = c("Middens" = "#BC43FF", "Background (time-matched)" = "#9AA0A6")) +
+  scale_x_continuous(limits = c(0,1), breaks = seq(0,1,0.1)) +
+  labs(title = sprintf("Habitat suitability at dated midden locations (%.1f°)", terra::res(conditor_spatrast_coarse)[1]), x = "Modelled suitability (0–1)", y = "Count", fill = NULL) +
+  theme_minimal(base_size = 12) +
+  theme(plot.background = element_rect(fill = "white", colour = NA), panel.background = element_rect(fill = "#F2F2F2", colour = NA), panel.grid.major = element_line(colour = "white"), legend.position = "bottom")
+
+ggsave(file.path(results_dir, "panel_a_coarse_hist.png"), p_a_coarse, width = w_single, height = h_single, dpi = dpi_out, bg = "white")
+
+persist_full <- compute_persistence_strict(conditor_spatrast, middens_sf, thr = thr_b, include_current = include_current, lookback_ka = lookback_ka, step_years = step_years)
+x_max_b <- if (is.finite(lookback_ka)) lookback_ka else max(persist_full$persist_ka, na.rm = TRUE)
+
+p_b_full <- ggplot(persist_full, aes(x = persist_ka)) +
+  geom_histogram(binwidth = 1, boundary = 0, closed = "left", colour = "white", fill = "#BC43FF", alpha = 0.9) +
+  scale_x_continuous(limits = c(0, x_max_b), breaks = seq(0, x_max_b, by = 10), labels = function(x) paste0(x, " ka")) +
+  labs(title = sprintf("Duration of suitability prior to midden deposition (%.1f°)", terra::res(conditor_spatrast)[1]), x = sprintf("Years suitable before deposition (ka; suitability \u2265 %.2f)", thr_b), y = "Count") +
+  theme_minimal(base_size = 12) +
+  theme(plot.background = element_rect(fill = "white", colour = NA), panel.background = element_rect(fill = "#F2F2F2", colour = NA), panel.grid.major = element_line(colour = "white"))
+
+ggsave(file.path(results_dir, "panel_b_full_hist_thr035.png"), p_b_full, width = w_single, height = h_single, dpi = dpi_out, bg = "white")
+
+persist_coarse <- compute_persistence_strict(conditor_spatrast_coarse, middens_sf, thr = thr_b, include_current = include_current, lookback_ka = lookback_ka, step_years = step_years)
+
+p_b_coarse <- ggplot(persist_coarse, aes(x = persist_ka)) +
+  geom_histogram(binwidth = 1, boundary = 0, closed = "left", colour = "white", fill = "#BC43FF", alpha = 0.9) +
+  scale_x_continuous(limits = c(0, x_max_b), breaks = seq(0, x_max_b, by = 10), labels = function(x) paste0(x, " ka")) +
+  labs(title = sprintf("Duration of suitability prior to midden deposition (%.1f°)", terra::res(conditor_spatrast_coarse)[1]), x = sprintf("Years suitable before deposition (ka; suitability \u2265 %.2f)", thr_b), y = "Count") +
+  theme_minimal(base_size = 12) +
+  theme(plot.background = element_rect(fill = "white", colour = NA), panel.background = element_rect(fill = "#F2F2F2", colour = NA), panel.grid.major = element_line(colour = "white"))
+
+ggsave(file.path(results_dir, "panel_b_coarse_hist_thr035.png"), p_b_coarse, width = w_single, height = h_single, dpi = dpi_out, bg = "white")
+
+p_a_tag <- cowplot::ggdraw(p_a_coarse + labs(title = NULL)) +
+  cowplot::draw_label("(a)", x = 0.02, y = 0.98, hjust = 0, vjust = 1, fontface = "bold")
+p_b_tag <- cowplot::ggdraw(p_b_coarse + labs(title = NULL)) +
+  cowplot::draw_label("(b)", x = 0.02, y = 0.98, hjust = 0, vjust = 1, fontface = "bold")
+
+fig_ab <- cowplot::plot_grid(p_a_tag, p_b_tag, ncol = 1, rel_heights = c(1,1))
+print(fig_ab)
+
+ggsave(file.path(results_dir, "figure_histograms_panels_ab_COARSE_thrB_035_VERTICAL.png"), fig_ab,
+       width = 7, height = 10, dpi = dpi_out, bg = "white")
+```
+
+# Variable importance table + PDPs
+```{r vip-pdp}
+suppressPackageStartupMessages({ library(DALEX); library(tidysdm); library(ggplot2); library(dplyr); library(knitr) })
+conditor_explainer <- explain_tidysdm(conditor_ensemble)
+conditor_outdir <- file.path(results_dir, "variable_importance"); dir.create(conditor_outdir, showWarnings = FALSE, recursive = TRUE)
+
+conditor_vip <- model_parts(explainer = conditor_explainer) |>
+  dplyr::filter(!variable %in% c("_baseline_", "_full_model_")) |>
+  dplyr::group_by(variable) |>
+  dplyr::summarise(mean_dropout_loss = round(mean(dropout_loss, na.rm = TRUE), 3),
+                   sd_dropout_loss   = round(sd(dropout_loss,   na.rm = TRUE), 3), .groups = "drop_last") |>
+  dplyr::arrange(desc(mean_dropout_loss)) |>
+  dplyr::rename(`Environmental variable` = variable, `Mean drop-out loss` = mean_dropout_loss, `SD` = sd_dropout_loss)
+
+print(conditor_vip)
+write.csv(conditor_vip, file.path(conditor_outdir, "conditor_variable_importance_table.csv"), row.names = FALSE)
+knitr::kable(conditor_vip, caption = "Variable importance summary (Leporillus conditor ensemble model)", format = "markdown")
+
+plot_and_save_pdp <- function(var, label){
+  pdp <- model_profile(conditor_explainer, N = 500, variables = var)
+  p <- ggplot(pdp$agr_profiles, aes(x = `_x_`, y = `_yhat_`)) +
+    geom_line(colour = "darkblue", linewidth = 1) +
+    labs(title = paste("Leporillus conditor – Partial Dependence on", label), x = label, y = "Predicted suitability") +
+    theme_minimal(base_size = 12) +
+    theme(plot.background = element_rect(fill = "white", colour = NA), panel.background = element_rect(fill = "#F2F2F2", colour = NA), panel.grid.major = element_line(colour = "#C4C4C4", linewidth = 0.3), panel.border = element_rect(colour = "#C4C4C4", fill = NA, linewidth = 0.3), plot.title = element_text(face = "italic", size = 13))
+  ggsave(file.path(conditor_outdir, paste0("conditor_pdp_", var, ".png")), p, width = 6, height = 4, dpi = 300, bg = "white")
+  print(p)
+}
+plot_and_save_pdp("bio05", "Maximum temperature of warmest month (°C)")
+plot_and_save_pdp("bio06", "Minimum temperature of coldest month (°C)")
+plot_and_save_pdp("bio12", "Annual precipitation (mm)")
+```
+
+# KDE of midden sampling density (optional viz)
+```{r kde-middens}
+suppressPackageStartupMessages({ library(rnaturalearth); library(rnaturalearthdata) })
+dated_middens_2 <- read.csv(file.path(processed_dir, "datedmiddens.csv"))
+middens_sf_2 <- sf::st_as_sf(dated_middens_2, coords = c("longitude", "latitude"), crs = 4326)
+middens_df_2 <- middens_sf_2 |>
+  dplyr::mutate(longitude = sf::st_coordinates(.)[,1], latitude = sf::st_coordinates(.)[,2]) |>
+  sf::st_drop_geometry()
+
+australia_outline_ne <- rnaturalearth::ne_countries(scale = "medium", returnclass = "sf") %>% dplyr::filter(admin == "Australia")
+
+pad_points <- data.frame(longitude = c(110, 150, 150, 110), latitude = c(-10, -10, -45, -45))
+middens_df_padded <- dplyr::bind_rows(middens_df_2, pad_points)
+
+p <- ggplot() +
+  geom_sf(data = australia_outline_ne, fill = scales::alpha("#C4C4C4", 0.5), colour = "black") +
+  stat_density_2d(data = middens_df_padded, aes(x = longitude, y = latitude, fill = after_stat(level)),
+                  geom = "polygon", contour = TRUE, colour = NA, adjust = 0.4, alpha = 0.8, n = 200) +
+  scale_fill_viridis_c(option = "magma", name = "Density", direction = -1) +
+  coord_sf(xlim = c(110, 155), ylim = c(-45, -10), expand = FALSE) +
+  labs(title = "Spatial Density of Dated Midden Samples", x = "Longitude", y = "Latitude") +
+  theme_minimal(base_size = 12) +
+  theme(
+    plot.background = element_rect(fill = "white", colour = NA),
+    panel.background = element_rect(fill = "#F2F2F2", colour = NA),
+    panel.grid.major = element_line(colour = "#C4C4C4"),
+    panel.grid.minor = element_line(colour = "#C4C4C4"),
+    legend.position  = c(0.03, 0.20),
+    legend.justification = c("left", "top"),
+    legend.background = element_rect(fill = "white", colour = "grey70", linewidth = 0.3),
+    legend.key = element_rect(fill = "white", colour = NA),
+    legend.margin = margin(6, 12, 6, 9),
+    legend.title = element_text(size = 10),
+    legend.text  = element_text(size = 9)
+  ) +
+  guides(fill = guide_colorbar(title = "Density", title.position = "top", title.theme = element_text(size = 10),
+                               label.theme = element_text(size = 9), direction = "horizontal",
+                               barwidth = unit(4, "cm"), barheight = unit(0.4, "cm"),
+                               ticks = TRUE, ticks.colour = "black", frame.colour = "grey70", frame.linewidth = 0.3,
+                               label.position = "bottom", breaks = c(0, 0.04, 0.08)))
+
+ggsave(file.path(here("Results/stratified environmental sampling"), "midden_sampling_density.png"), p, width = 7, height = 6, dpi = 300, bg = "white")
+```
+
+# Citations dump (optional)
+```{r citations, eval=FALSE}
+lapply(c("tidysdm", "tidymodels", "workflowsets", "workflows", "tune", "parsnip", "recipes", "yardstick", "rsample",
+         "spatialsample", "dials", "dplyr", "tidyr", "purrr", "tibble", "ggplot2", "cowplot", "scales", "viridis",
+         "viridisLite", "sf", "terra", "tidyterra", "pastclim", "oz", "rworldmap", "DALEX", "ecospat", "broom",
+         "infer", "readr", "fs", "gtools", "RefManageR"),
+       function(pkg) { cat("\n---", pkg, "---\n"); print(citation(pkg)) })
+```
