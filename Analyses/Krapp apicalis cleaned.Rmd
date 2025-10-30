@@ -68,7 +68,7 @@ suppressPackageStartupMessages({                                                
 # Project paths
 
 ```{r paths}
-here::i_am("Analyses/Krapp apicalis finished 2.Rmd")                               # declare project root via here()
+here::i_am("Analyses/Krapp apicalis cleaned.Rmd")                               # declare project root via here()
 
 results_dir   <- here("Results/stratified environmental sampling", "apicalis")     # figures/tables output
 processed_dir <- here("Data", "processed")                                         # cleaned input data
@@ -144,7 +144,44 @@ set.seed(123)                                                                   
 apicalis <- thin_by_dist(apicalis, dist_min = km2m(50))                             # remove points <50 km apart
 NROW(apicalis)                                                                       # report retained count
 ```
+#Grid-resolution-optimisation
+NOTE: This is slow but only needs to be run once.
+ ```{r grid-resolution-optimisation}
+# 1) Extract environmental values from the raster
+env_values <- terra::as.data.frame(env_space_1950, xy = TRUE, na.rm = TRUE)
 
+# 2) Perform PCA on the environmental variables
+#    (Check that names below match env_values)
+pca_res <- prcomp(
+  env_values[, c("bio05_0", "bio06_0", "bio12_0")],
+  scale. = TRUE
+)
+
+# 3) Create an sf object with first two PC scores as coordinates
+env_pca_sf <- sf::st_as_sf(
+  data.frame(
+    PC1 = pca_res$x[, 1],
+    PC2 = pca_res$x[, 2],
+    x   = env_values$x,
+    y   = env_values$y
+  ),
+  coords = c("PC1", "PC2")
+)
+
+# 4) Grid-resolution optimisation
+opt_res <- optimRes(
+  env_pca_sf,
+  grid.res = seq(1, 100, by = 1),
+  perc.thr = 10,
+  cr       = 1,
+  showOpt  = TRUE
+)
+
+optimal_grid_res <- opt_res[[2]]
+print(optimal_grid_res)
+
+
+ ```
 # Pseudo-absence sampling in environmental space
 
 ```{r env-space-setup}
@@ -1105,7 +1142,7 @@ plot_and_save_pdp("bio12", "Annual precipitation (mm)")
 suppressPackageStartupMessages({ library(rnaturalearth); library(rnaturalearthdata) })  # basemaps
 
 # ---- Build a simple df of midden XYs ----
-middens_df_2 <- middens_sf_2 %>%                                               # assumes middens_sf_2 exists
+middens_df_2 <- middens_sf %>%
   dplyr::mutate(
     longitude = sf::st_coordinates(.)[, 1],
     latitude  = sf::st_coordinates(.)[, 2]
