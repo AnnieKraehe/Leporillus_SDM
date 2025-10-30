@@ -1,9 +1,17 @@
 These files were generated using R version 4.4.3 (2025-02-28 ucrt)
-Date run: 2025-10-16
-Script title: Krapp conditor.Rmd
-Script location: C:/github/SNR_SDM/Analyes/Krapp conditor.Rmd
+Date run: 2025-10-30
+Script title: Unknown (script path not available outside RStudio)
+Script location: 
 
 Packages used:
+  - rnaturalearthdata: 1.0.0
+  - rnaturalearth: 1.0.1
+  - lubridate: 1.9.3
+  - forcats: 1.0.0
+  - stringr: 1.5.1
+  - tidyverse: 2.0.0
+  - knitr: 1.49
+  - rworldxtra: 1.1
   - magick: 2.8.6
   - xgboost: 1.7.8.1
   - ranger: 0.17.0

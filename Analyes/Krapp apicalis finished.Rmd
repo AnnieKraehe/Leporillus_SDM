@@ -493,73 +493,60 @@ writeRaster(apicalis_spatrast, filename = output_file, overwrite = TRUE)
 ```{r stack o maps}
 library(magick)
 
-# Load world map data and filter for Australia
+# Australia outline once (kept as-is)
 world_map <- rworldmap::getMap(resolution = "high")
 australia_outline <- sf::st_as_sf(world_map) %>%
-  dplyr::filter(ADMIN == "Australia")  # Keep only Australia
+  dplyr::filter(ADMIN == "Australia")
 
-# Loop over 40 time steps (40 ka in 1 ka timesteps)
-walk(760:800, function(timestep) {
-  year_bp <- time(climate_full[[1]])[timestep] - 1950  # Calculate years before present
+# Output folder for the PNGs
+out_dir <- file.path(results_dir, "model")
+if (!dir.exists(out_dir)) dir.create(out_dir, recursive = TRUE)
 
-  # Create climate snapshot
-  climate_snapshot <- rast(list(
-    climate_full[[1]][[timestep]], 
-    climate_full[[2]][[timestep]], 
+# I need magick for trimming/borders
+if (!"magick" %in% .packages()) library(magick)
+
+# Loop over 40 timesteps (760:800 = ~41 layers; adjust if needed)
+purrr::walk(760:800, function(timestep) {
+  year_bp <- time(climate_full[[1]])[timestep] - 1950  # years BP
+
+  # Climate snapshot for this timestep (bio05,06,12)
+  climate_snapshot <- terra::rast(list(
+    climate_full[[1]][[timestep]],
+    climate_full[[2]][[timestep]],
     climate_full[[3]][[timestep]]
   ))
   names(climate_snapshot) <- c("bio05", "bio06", "bio12")
 
-  # Predict suitability
- apicalis_prediction_raster <- predict_raster_ensemble(apicalis_ensemble, climate_snapshot)
+  # Predict suitability with the simple_ensemble() object
+  prediction_raster <- predict_raster(apicalis_ensemble, climate_snapshot)
 
-
-  # Create plot
+  # Plot — match the older aesthetic
   p <- ggplot() +
-    geom_spatraster(data = apicalis_prediction1, aes(fill = mean)) +
+    geom_spatraster(data = prediction_raster, aes(fill = mean)) +
     scale_fill_terrain_c(name = "Probability\nof occurrence") +
-    geom_sf(data = australia_outline, fill = NA, color = "grey20", linewidth = 0.3) +
+    geom_sf(data = australia_outline, fill = NA, colour = "grey20", linewidth = 0.3) +
     coord_sf(xlim = c(112, 150), ylim = c(-40, -10)) +
     ggtitle(bquote(italic("Leporillus apicalis") * " — Years BP: " * .(year_bp))) +
     theme_minimal() +
     theme(
-   plot.background = element_rect(fill = "white", colour = NA),     
-  panel.background = element_rect(fill = "#F2F2F2", colour = NA),
-  panel.grid.major = element_line(colour = "#C4C4C4"),
-  panel.grid.minor = element_line(colour = "#C4C4C4"),
-      plot.margin = margin(0, 0, 0, 0, unit = "pt")
+      plot.background  = element_rect(fill = "white", colour = NA),
+      panel.background = element_rect(fill = "#F2F2F2", colour = NA),
+      panel.grid.major = element_line(colour = "#C4C4C4"),
+      panel.grid.minor = element_line(colour = "#C4C4C4"),
+      plot.margin      = margin(0, 0, 0, 0, unit = "pt")
     )
 
-# Define output path
-plot_path <- file.path(
-  results_dir, "model",
-  paste0("apicalis_map_", year_bp, ".png")
-)
-
-# Save PNG
-ggsave(
-  filename = plot_path,
-  plot = p,
-  width = 7,
-  height = 7,
-  dpi = 300,
-  bg = "transparent"
-)
-
-# Keep plot_path available globally
-assign("plot_path", plot_path, envir = .GlobalEnv)
-
-# Add metadata
-source(here("create_explainer", "create_explainer.R"))
+  # Save PNG
+  plot_path <- file.path(out_dir, paste0("apicalis_map_", year_bp, ".png"))
+  ggsave(filename = plot_path, plot = p, width = 7, height = 7, dpi = 300, bg = "transparent")
 
 
-  # Trim and add white border
+
+  # Trim and add a white border
   img <- image_read(plot_path)
-  img_trimmed <- image_trim(img)
-  img_bordered <- image_border(img_trimmed, color = "white", geometry = "30x30")
-  image_write(img_bordered, path = plot_path)
+  img <- image_border(image_trim(img), color = "white", geometry = "30x30")
+  image_write(img, path = plot_path)
 })
-
 
 
 
@@ -846,8 +833,7 @@ ggsave(
 
 assign("plot_path", plot_path, envir = .GlobalEnv)
 
-# Add metadata
-source(here("create_explainer", "create_explainer.R"))
+
 
 
   # Trim and add white border
@@ -1575,15 +1561,7 @@ ggsave(
 
 
 ```
-```{r endnote library}
-# Define Results folder
-results_root <- here("Results")
 
-# Run EndNote export script to create citation library in this folder
-source(here("create_endnote_library", "create_endnote_library.r"))
-
-
-```
 
 ```{r}
 lapply(c("tidysdm", "tidymodels", "workflowsets", "workflows", "tune", "parsnip", "recipes", "yardstick", "rsample", 
@@ -1668,16 +1646,22 @@ pt_20 <- apicalis_centroids[which.min(abs(apicalis_centroids$time_bp + 20000)), 
 pt_0  <- apicalis_centroids[which.min(abs(apicalis_centroids$time_bp - 0)),       , drop = FALSE]
 
 # ---- 5) Build single panel plot ----
+# (assumes: r_diff has layer "diff"; aus_outline is an sf polygon of Australia;
+#  xlim/ylim are numeric vectors; theme_map_clean/fill_scale are already defined)
+
+# Centroid endpoints for legend markers (20 ka & present)
+pt_20 <- apicalis_centroids[which.min(abs(apicalis_centroids$time_bp + 20000)), , drop = FALSE]
+pt_0  <- apicalis_centroids[which.min(abs(apicalis_centroids$time_bp - 0)),       , drop = FALSE]
+
 p_single <- ggplot() +
-  # Difference map (background)
+  # background: change map
   geom_spatraster(data = r_diff, aes(fill = diff)) +
   fill_scale +
-  # Australia outline
-  geom_sf(data = aus_outline, fill = NA, colour = "grey2
-          0", linewidth = 0.4) +
-  # Map window
+  # coastline/outline
+  geom_sf(data = aus_outline, fill = NA, colour = "grey20", linewidth = 0.4) +
+  # map window
   coord_sf(xlim = xlim, ylim = ylim, expand = FALSE) +
-  # Centroid trajectory (path = black; points coloured by time)
+  # centroid path and points
   geom_path(
     data = apicalis_centroids, aes(longitude, latitude),
     colour = "black", linewidth = 0.7, alpha = 0.85
@@ -1687,7 +1671,7 @@ p_single <- ggplot() +
     aes(longitude, latitude, colour = time_bp),
     size = 2
   ) +
-  # Endpoints with shapes (triangle = 20 ka; circle = present)
+  # endpoints: triangle = 20 ka; circle = 0 ka
   geom_point(
     data = pt_20, aes(longitude, latitude, shape = "20 ka centroid"),
     size = 3, fill = "white", colour = "black", stroke = 0.6
@@ -1696,30 +1680,27 @@ p_single <- ggplot() +
     data = pt_0,  aes(longitude, latitude, shape = "Present centroid"),
     size = 3, fill = "yellow", colour = "black", stroke = 0.6
   ) +
-  # Colourbar for time along the trajectory
+  # colourbar for time along the trajectory
   scale_colour_viridis_c(
-    name   = "Years BP",      # <-- label added here
+    name   = "Years BP",
     option = "H",
     limits = c(-40000, 0),
     breaks = c(-40000, -30000, -20000, -10000, 0),
     labels = c("40 ka", "30 ka", "20 ka", "10 ka", "0")
   ) +
-  # Shape legend for endpoints
+  # endpoint shapes in legend
   scale_shape_manual(
     name   = "Centroid positions",
     values = c("20 ka centroid" = 24, "Present centroid" = 21)
   ) +
-  # Axes labels (kept minimal)
   labs(x = "Longitude", y = "Latitude") +
   theme_map_clean +
-  # Make the two legends appear one above the other and tidy their titles
   guides(
     fill   = guide_colourbar(title.position = "top", order = 1),
     colour = guide_colourbar(title.position = "top", order = 2),
     shape  = guide_legend(title.position  = "top",  order = 3)
   )
 
-# Preview
 print(p_single)
 
 # ---- 6) Save figure ----
@@ -1728,6 +1709,16 @@ ggsave(
   plot = p_single,
   width = 7.5, height = 6.5, dpi = 300, bg = "white"
 )
+
+
+```
+
+```{r endnote library}
+# Define Results folder
+results_root <- here("Results")
+
+# Run EndNote export script to create citation library in this folder
+source(here("create_endnote_library", "create_endnote_library.r"))
 
 
 ```
