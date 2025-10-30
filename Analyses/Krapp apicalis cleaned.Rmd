@@ -99,7 +99,7 @@ theme_map_clean <- theme_minimal(base_size = 12) +                              
 pastclim::download_dataset("Krapp2021")                                             # make sure climate dataset is available
 ```
 
-# Read *apicalis* occurrences
+# Read apicalis occurrences
 
 ```{r read-apicalis}
 apicalis <- readr::read_csv(file.path(processed_dir, "apicalis_flat.csv"),         # load occurrences
