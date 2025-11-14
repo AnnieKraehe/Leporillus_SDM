@@ -78,6 +78,58 @@ if (!dir.exists(results_dir)) dir.create(results_dir, recursive = TRUE)         
 # Globals (shared objects)
 
 ```{r globals}
+
+# --- Load outline from rworldmap ---
+world_map <- rworldmap::getMap(resolution = "high")
+
+australia_outline_raw <-
+  sf::st_as_sf(world_map) |>
+  dplyr::filter(ADMIN == "Australia")
+
+# --- Study extent (lon/lat) ---
+Aust_extent <- terra::ext(110, 155, -45, -10)
+
+xlim <- c(110, 155)
+ylim <- c(-45, -10)
+
+# --- Crop outline so ggplot can't expand to sub-Antarctic polygons ---
+australia_outline <-
+  sf::st_crop(
+    australia_outline_raw,
+    xmin = xlim[1], xmax = xlim[2],
+    ymin = ylim[1], ymax = ylim[2]
+  )
+
+# --- Clean map theme ---
+theme_map_clean <- theme_minimal(base_size = 12) +
+  theme(
+    plot.background  = element_rect(fill = "white", color = NA),
+    panel.background = element_rect(fill = "#F2F2F2", color = NA),
+    panel.grid.major = element_line(color = "white"),
+    panel.grid.minor = element_blank()
+  )
+
+
+```
+
+# Data: download Krapp2021
+
+```{r download-climate}
+pastclim::download_dataset("Krapp2021")                                             # make sure climate dataset is available
+```
+
+# Read apicalis occurrences
+
+```{r read-apicalis}
+apicalis <- readr::read_csv(file.path(processed_dir, "apicalis_flat.csv"),         # load occurrences
+                            show_col_types = FALSE) |>
+  (\(x) { print(x); x })() |>                                                      # echo a preview for sanity
+  sf::st_as_sf(coords = c("longitude", "latitude"), crs = 4326)                    # convert to sf (WGS84)
+```
+
+# Globals (shared objects)
+
+```{r globals}
 world_map <- rworldmap::getMap(resolution = "high")                                 # coarse world polygons
 australia_outline <- sf::st_as_sf(world_map) |> dplyr::filter(ADMIN == "Australia") # Australia boundary as sf
 
@@ -99,7 +151,7 @@ theme_map_clean <- theme_minimal(base_size = 12) +                              
 pastclim::download_dataset("Krapp2021")                                             # make sure climate dataset is available
 ```
 
-# Read apicalis occurrences
+# Read *apicalis* occurrences
 
 ```{r read-apicalis}
 apicalis <- readr::read_csv(file.path(processed_dir, "apicalis_flat.csv"),         # load occurrences
@@ -123,7 +175,7 @@ ggplot() +
   tidyterra::geom_spatraster(data = land_mask_current, aes()) +                     # draw land mask
   tidyterra::scale_fill_terrain_c() +                                               # simple palette
   geom_sf(data = apicalis, aes(col = time_bp)) +                                    # plot points coloured by time
-  coord_sf(xlim = xlim, ylim = ylim, expand = FALSE)                                                # map window
+  coord_sf(xlim = xlim, ylim = ylim)                                                # map window
 ```
 
 # Climate time series (Krapp2021)
@@ -144,44 +196,7 @@ set.seed(123)                                                                   
 apicalis <- thin_by_dist(apicalis, dist_min = km2m(50))                             # remove points <50 km apart
 NROW(apicalis)                                                                       # report retained count
 ```
-#Grid-resolution-optimisation
-NOTE: This is slow but only needs to be run once.
- ```{r grid-resolution-optimisation}
-# 1) Extract environmental values from the raster
-env_values <- terra::as.data.frame(env_space_1950, xy = TRUE, na.rm = TRUE)
 
-# 2) Perform PCA on the environmental variables
-#    (Check that names below match env_values)
-pca_res <- prcomp(
-  env_values[, c("bio05_0", "bio06_0", "bio12_0")],
-  scale. = TRUE
-)
-
-# 3) Create an sf object with first two PC scores as coordinates
-env_pca_sf <- sf::st_as_sf(
-  data.frame(
-    PC1 = pca_res$x[, 1],
-    PC2 = pca_res$x[, 2],
-    x   = env_values$x,
-    y   = env_values$y
-  ),
-  coords = c("PC1", "PC2")
-)
-
-# 4) Grid-resolution optimisation
-opt_res <- optimRes(
-  env_pca_sf,
-  grid.res = seq(1, 100, by = 1),
-  perc.thr = 10,
-  cr       = 1,
-  showOpt  = TRUE
-)
-
-optimal_grid_res <- opt_res[[2]]
-print(optimal_grid_res)
-
-
- ```
 # Pseudo-absence sampling in environmental space
 
 ```{r env-space-setup}
@@ -396,7 +411,7 @@ prediction_lgm <- predict_raster(apicalis_ensemble, climate_lgm)                
 ggplot() +
   tidyterra::geom_spatraster(data = prediction_lgm, aes(fill = mean)) +
   tidyterra::scale_fill_terrain_c(name = "Probability\nof occurrence") +
-  coord_sf(xlim = xlim, ylim = ylim, expand = FALSE)
+  coord_sf(xlim = xlim, ylim = ylim)
 ```
 
 # Save model as SpatRaster stack
@@ -447,7 +462,7 @@ purrr::walk(760:800, function(timestep) {                                       
     tidyterra::geom_spatraster(data = prediction_raster, aes(fill = mean)) +
     tidyterra::scale_fill_terrain_c(name = "Probability\nof occurrence") +
     geom_sf(data = australia_outline, fill = NA, color = "grey20", linewidth = 0.3) +
-    coord_sf(xlim = xlim, ylim = ylim, expand = FALSE) +
+    coord_sf(xlim = xlim, ylim = ylim) +
     ggtitle(bquote(italic("Leporillus apicalis") * " — Years BP: " * .(year_bp))) +
     theme_minimal() +
     theme(
@@ -483,8 +498,8 @@ panel_plots <- pmap(
       tidyterra::geom_spatraster(data = current_prediction, aes(fill = mean)) +
       tidyterra::scale_fill_terrain_c(name = "Probability\nof occurrence", limits = c(0, 1)) +
       geom_sf(data = australia_outline, fill = NA, color = "grey20", linewidth = 0.3) +
-      coord_sf(xlim = xlim, ylim = ylim, expand = FALSE) +
-      scale_y_continuous(breaks = seq(-45, -10, by = 4)) +
+      coord_sf(xlim = xlim, ylim = ylim) +
+      scale_y_continuous(breaks = seq(-40, -10, by = 4)) +
       scale_x_continuous(breaks = seq(112, 150, by = 8)) +
       ggtitle(bquote("(" * .(tag_label) * ")  Years BP: " * .(year_bp))) +
       theme_minimal(base_size = 10) +
@@ -511,7 +526,67 @@ ggsave(file.path(results_dir, "apicalis_model_panel.png"), final_panel,         
        width = 10, height = 9, dpi = 300)
 ```
 
+# Centroid through time & diff map (0 vs 20 ka)
 
+```{r centroid-diff, dependson="globals"}
+# Compute weighted centroids over time
+apicalis_centroids <- lapply(1:nlyr(apicalis_spatrast), function(i) {
+  r <- apicalis_spatrast[[i]]
+  vals <- terra::values(r)[, 1]                                                     # suitability values
+  coords <- terra::crds(r, na.rm = FALSE)                                           # cell centroids
+  valid <- !is.na(vals) & vals > 0
+  if (!any(valid)) return(NULL)
+  w <- vals[valid]; cxy <- coords[valid, ]
+  data.frame(time_bp = time(apicalis_spatrast)[i],
+             longitude = sum(cxy[,1] * w) / sum(w),
+             latitude  = sum(cxy[,2] * w) / sum(w))
+}) |>
+  dplyr::bind_rows()
+
+# Difference map: present minus 20 ka
+r_times <- as.numeric(terra::time(apicalis_spatrast))
+idx_20  <- which.min(abs(r_times - (-20000)))
+idx_0   <- which.min(abs(r_times - 0))
+r_diff  <- apicalis_spatrast[[idx_0]] - apicalis_spatrast[[idx_20]]
+
+# Symmetric colour scale based on robust limits
+vals <- terra::values(r_diff, mat = FALSE)
+lims <- quantile(abs(vals), 0.98, na.rm = TRUE) |> as.numeric()
+lims <- max(0.1, min(1, lims))
+
+fill_scale <- scale_fill_gradient2(
+  name = "Change in suitability\nsince 20 ka",
+  low = "#3B4CC0", mid = "white", high = "#B40426",
+  midpoint = 0, limits = c(-lims, lims)
+)
+
+# Endpoints for legend markers
+pt_20 <- apicalis_centroids[which.min(abs(apicalis_centroids$time_bp + 20000)), , drop = FALSE]
+pt_0  <- apicalis_centroids[which.min(abs(apicalis_centroids$time_bp - 0)),       , drop = FALSE]
+
+# Plot single-panel diff + trajectory
+p_single <- ggplot() +
+  tidyterra::geom_spatraster(data = r_diff, aes(fill = mean)) +
+  fill_scale +
+  geom_sf(data = australia_outline, fill = NA, color = "grey20", linewidth = 0.4) +
+  coord_sf(xlim = xlim, ylim = ylim, expand = FALSE) +
+  geom_path(data = apicalis_centroids, aes(longitude, latitude), color = "black", linewidth = 0.7, alpha = 0.85) +
+  geom_point(data = apicalis_centroids, aes(longitude, latitude, color = time_bp), size = 2) +
+  geom_point(data = pt_20, aes(longitude, latitude, shape = "20 ka centroid"), size = 3, fill = "white", color = "black", stroke = 0.6) +
+  geom_point(data = pt_0,  aes(longitude, latitude, shape = "Present centroid"), size = 3, fill = "yellow", color = "black", stroke = 0.6) +
+  scale_color_viridis_c(name = "Years BP", option = "H",
+                        limits = c(-40000, 0), breaks = c(-40000, -30000, -20000, -10000, 0),
+                        labels = c("40 ka", "30 ka", "20 ka", "10 ka", "0")) +
+  scale_shape_manual(name = "Centroid positions", values = c("20 ka centroid" = 24, "Present centroid" = 21)) +
+  labs(x = "Longitude", y = "Latitude") +
+  theme_map_clean +
+  guides(fill = guide_colorbar(title.position = "top", order = 1),
+         color = guide_colorbar(title.position = "top", order = 2),
+         shape  = guide_legend(title.position  = "top", order = 3))
+
+ggsave(file.path(results_dir, "figure_range_shift_single.png"), p_single,          # save figure
+       width = 7.5, height = 6.5, dpi = 300, bg = "white")
+```
 
 # Middens validation prep
 
@@ -589,7 +664,7 @@ walk(seq_along(raster_timesteps), function(i) {
     geom_sf(data = current_middens, shape = 21,
             fill = "#FF3399", color = "black",
             size = 2, stroke = 0.4) +
-    coord_sf(xlim = xlim, ylim = ylim, expand = FALSE) +
+    coord_sf(xlim = xlim, ylim = ylim) +
     ggtitle(bquote(italic("Leporillus apicalis") *
                    " SDM with Middens — Years BP: " *
                    .(current_year_bp))) +
@@ -676,8 +751,8 @@ panel_plots <- pmap(
       ) +
       scale_color_manual(name = NULL, values = c("Midden" = "black")) +
       scale_shape_manual(name = NULL, values = c("Midden" = 21)) +
-      coord_sf(xlim = xlim, ylim = ylim, expand = FALSE) +
-      scale_y_continuous(breaks = seq(-45, -10, by = 4)) +
+      coord_sf(xlim = xlim, ylim = ylim) +
+      scale_y_continuous(breaks = seq(-40, -10, by = 4)) +
       scale_x_continuous(breaks = seq(112, 150, by = 8)) +
       ggtitle(
         bquote("(" * .(tag_label) * ")  Years BP: " * .(abs(year_bp)))
@@ -857,362 +932,6 @@ cat(sprintf("True Skill Statistic: %.3f\n", tss))
 cat(sprintf("Sorensen: %.3f\n", sorensen))
 cat(sprintf("F2 score: %.3f\n", f2score))
 ```
-
-
-# Centroid through time & diff map (0 vs 20 ka)
-
-```{r centroid-diff, dependson="globals"}
-
-# --- Output directory ---
-out_dir <- "C:/github/SNR_SDM/Results/stratified environmental sampling/apicalis"
-dir.create(out_dir, recursive = TRUE, showWarnings = FALSE)
-
-suppressPackageStartupMessages({ library(ggnewscale) })
-
-# ─────────────────────────────────────────────────────────
-# 1) Suitability-weighted centroids through time
-# ─────────────────────────────────────────────────────────
-apicalis_centroids <- lapply(seq_len(nlyr(apicalis_spatrast)), function(i) {
-  r      <- apicalis_spatrast[[i]]
-  vals   <- terra::values(r)[,1]
-  coords <- terra::crds(r, na.rm = FALSE)
-  valid  <- is.finite(vals) & vals > 0
-
-  if (!any(valid)) return(NULL)
-
-  w  <- vals[valid]
-  xy <- coords[valid,]
-
-  data.frame(
-    time_bp   = terra::time(apicalis_spatrast)[i],
-    longitude = weighted.mean(xy[,1], w),
-    latitude  = weighted.mean(xy[,2], w)
-  )
-}) |> dplyr::bind_rows()
-
-# Identify the 0 ka and 20 ka layers
-r_times <- as.numeric(terra::time(apicalis_spatrast))
-idx_0   <- which.min(abs(r_times - 0))
-idx_21  <- which.min(abs(r_times + 20000))
-
-pt_0  <- apicalis_centroids[which.min(abs(apicalis_centroids$time_bp - 0)), , drop = FALSE]
-pt_20 <- apicalis_centroids[which.min(abs(apicalis_centroids$time_bp + 20000)), , drop = FALSE]
-
-# ─────────────────────────────────────────────────────────
-# 2) Difference raster (0 ka − 20 ka) masked to Australia
-# ─────────────────────────────────────────────────────────
-r_diff <- apicalis_spatrast[[idx_0]] - apicalis_spatrast[[idx_20]]
-names(r_diff) <- "diff"
-
-r_diff <- terra::mask(r_diff, terra::vect(australia_outline))
-df_diff <- as.data.frame(r_diff, xy = TRUE, na.rm = FALSE)
-
-# diff colour scale limits
-lims <- quantile(abs(df_diff$diff), 0.98, na.rm = TRUE) |> as.numeric()
-lims <- max(lims, 0.1)
-
-diff_fill_scale <- scale_fill_gradient2(
-  name     = "Change in suitability\nsince 20 ka",
-  low      = "#ff7800",
-  mid      = "white",
-  high     = "#6112c2",
-  midpoint = 0,
-  limits   = c(-lims, lims),
-  na.value = "transparent"
-)
-
-# ─────────────────────────────────────────────────────────
-# 3) Dated middens (±500 yr)
-# ─────────────────────────────────────────────────────────
-middens_sf <- middens_sf |> dplyr::mutate(time_bp = as.numeric(time_bp))
-
-m_0  <- middens_sf |> dplyr::filter(abs(time_bp - 0) <= 500) |> dplyr::mutate(when = "0 ka")
-m_20 <- middens_sf |> dplyr::filter(abs(time_bp + 20000) <= 500) |> dplyr::mutate(when = "20 ka")
-
-m_plot <- dplyr::bind_rows(m_20, m_0) |>
-  dplyr::mutate(when = factor(when, levels = c("20 ka", "0 ka")))
-
-# extract coords → convert to df for solid geom_point()
-coords <- sf::st_coordinates(m_plot)
-
-m_plot_df <- m_plot |>
-  dplyr::mutate(
-    longitude = coords[,1],
-    latitude  = coords[,2]
-  ) |>
-  sf::st_drop_geometry()
-
-# ─────────────────────────────────────────────────────────
-# 4) Plot
-# ─────────────────────────────────────────────────────────
-p_single <- ggplot() +
-
-  # diff raster
-  geom_raster(data = df_diff, aes(x = x, y = y, fill = diff)) +
-  diff_fill_scale +
-  geom_sf(data = australia_outline, fill = NA, colour = "grey20", linewidth = 0.4) +
-  coord_sf(xlim = xlim, ylim = ylim, expand = FALSE) +
-
-  # centroid trajectory
-  geom_path(
-    data = apicalis_centroids,
-    aes(longitude, latitude),
-    colour = "black", linewidth = 0.7, alpha = 0.85
-  ) +
-  geom_point(
-    data = apicalis_centroids,
-    aes(longitude, latitude, colour = time_bp),
-    size = 2
-  ) +
-  geom_point(
-    data = pt_20,
-    aes(longitude, latitude, shape = "20 ka centroid"),
-    size = 3, fill = "white", colour = "black", stroke = 0.6
-  ) +
-  geom_point(
-    data = pt_0,
-    aes(longitude, latitude, shape = "Present centroid"),
-    size = 3, fill = "yellow", colour = "black", stroke = 0.6
-  ) +
-
-  scale_color_viridis_c(
-    name = "Centroid Years BP",
-    option = "H",
-    limits = c(-40000, 0),
-    breaks = c(-40000, -30000, -20000, -10000, 0),
-    labels = c("40 ka", "30 ka", "20 ka", "10 ka", "0")
-  ) +
-  scale_shape_manual(
-    name   = "Centroids",
-    values = c("20 ka centroid" = 24,
-               "Present centroid" = 21)
-  ) +
-
-  # reset colour + shape for middens
-ggnewscale::new_scale_fill() +    # reset fill scale
-ggnewscale::new_scale_color() +   # reset colour scale
-ggnewscale::new_scale("shape") +  # reset shape scale
-
-
-  geom_point(
-    data = m_plot_df,
-    aes(x = longitude, y = latitude, fill = when, shape = when),
-    colour = "black",
-    size = 2.7,
-    stroke = 0.4
-  ) +
-  scale_fill_manual(
-    name = "Dated middens",
-    values = c("20 ka" = "#E65100",
-               "0 ka"  = "#7C4DFF")
-  ) +
-  scale_shape_manual(
-    name = "Dated middens",
-    values = c("20 ka" = 24,
-               "0 ka"  = 21)
-  ) +
-
-  labs(x = "Longitude", y = "Latitude") +
-  theme_map_clean +
-  guides(
-    fill   = guide_colorbar(title.position = "top", order = 1),
-    colour = guide_colorbar(title.position = "top", order = 2),
-    shape  = guide_legend(title.position  = "top", order = 3)
-  )
-theme(
-  legend.position = "bottom",
-  legend.box = "vertical"
-)
-
-# ─────────────────────────────────────────────────────────
-# 5) Save + show
-# ─────────────────────────────────────────────────────────
-ggsave(
-  file.path(out_dir, "apicalis_figure_range_shift_0_vs_20ka_with_middens.png"),
-  p_single, width = 7.5, height = 6.5, dpi = 300, bg = "white"
-)
-saveRDS(p_single, file.path(out_dir, "apicalis_figure_range_shift_single.rds"))
-
-p_single
-
-
-```
-
-```{r centroid-diff, dependson="globals"}
-
-# --- Output directory ---
-out_dir <- "C:/github/SNR_SDM/Results/stratified environmental sampling/apicalis"
-dir.create(out_dir, recursive = TRUE, showWarnings = FALSE)
-
-suppressPackageStartupMessages({ library(ggnewscale) })
-
-# ─────────────────────────────────────────────────────────
-# 1) Suitability-weighted centroids through time
-# ─────────────────────────────────────────────────────────
-apicalis_centroids <- lapply(seq_len(nlyr(apicalis_spatrast)), function(i) {
-  r      <- apicalis_spatrast[[i]]
-  vals   <- terra::values(r)[,1]
-  coords <- terra::crds(r, na.rm = FALSE)
-  valid  <- is.finite(vals) & vals > 0
-
-  if (!any(valid)) return(NULL)
-
-  w  <- vals[valid]
-  xy <- coords[valid,]
-
-  data.frame(
-    time_bp   = terra::time(apicalis_spatrast)[i],
-    longitude = weighted.mean(xy[,1], w),
-    latitude  = weighted.mean(xy[,2], w)
-  )
-}) |> dplyr::bind_rows()
-
-# Identify the 0 ka and 28 ka layers
-r_times <- as.numeric(terra::time(apicalis_spatrast))
-idx_0   <- which.min(abs(r_times - 0))
-idx_28  <- which.min(abs(r_times + 28000))
-
-pt_0  <- apicalis_centroids[which.min(abs(apicalis_centroids$time_bp - 0)), , drop = FALSE]
-pt_28 <- apicalis_centroids[which.min(abs(apicalis_centroids$time_bp + 28000)), , drop = FALSE]
-
-# ─────────────────────────────────────────────────────────
-# 2) Difference raster (0 ka − 28 ka) masked to Australia
-# ─────────────────────────────────────────────────────────
-r_diff <- apicalis_spatrast[[idx_0]] - apicalis_spatrast[[idx_28]]
-names(r_diff) <- "diff"
-
-r_diff <- terra::mask(r_diff, terra::vect(australia_outline))
-df_diff <- as.data.frame(r_diff, xy = TRUE, na.rm = FALSE)
-
-# diff colour scale limits
-lims <- quantile(abs(df_diff$diff), 0.98, na.rm = TRUE) |> as.numeric()
-lims <- max(lims, 0.1)
-
-diff_fill_scale <- scale_fill_gradient2(
-  name     = "Change in suitability\nsince 28 ka",
-  low      = "#ff7800",
-  mid      = "white",
-  high     = "#6112c2",
-  midpoint = 0,
-  limits   = c(-lims, lims),
-  na.value = "transparent"
-)
-
-# ─────────────────────────────────────────────────────────
-# 3) Dated middens (±500 yr)
-# ─────────────────────────────────────────────────────────
-middens_sf <- middens_sf |> dplyr::mutate(time_bp = as.numeric(time_bp))
-
-m_0  <- middens_sf |> dplyr::filter(abs(time_bp - 0) <= 500)     |> dplyr::mutate(when = "0 ka")
-m_28 <- middens_sf |> dplyr::filter(abs(time_bp + 28000) <= 500) |> dplyr::mutate(when = "28 ka")
-
-m_plot <- dplyr::bind_rows(m_28, m_0) |>
-  dplyr::mutate(when = factor(when, levels = c("28 ka", "0 ka")))
-
-# extract coords → convert to df for solid geom_point()
-coords <- sf::st_coordinates(m_plot)
-
-m_plot_df <- m_plot |>
-  dplyr::mutate(
-    longitude = coords[,1],
-    latitude  = coords[,2]
-  ) |>
-  sf::st_drop_geometry()
-
-# ─────────────────────────────────────────────────────────
-# 4) Plot
-# ─────────────────────────────────────────────────────────
-p_single <- ggplot() +
-
-  # diff raster
-  geom_raster(data = df_diff, aes(x = x, y = y, fill = diff)) +
-  diff_fill_scale +
-  geom_sf(data = australia_outline, fill = NA, colour = "grey20", linewidth = 0.4) +
-  coord_sf(xlim = xlim, ylim = ylim, expand = FALSE) +
-
-  # centroid trajectory
-  geom_path(
-    data = apicalis_centroids,
-    aes(longitude, latitude),
-    colour = "black", linewidth = 0.7, alpha = 0.85
-  ) +
-  geom_point(
-    data = apicalis_centroids,
-    aes(longitude, latitude, colour = time_bp),
-    size = 2
-  ) +
-  geom_point(
-    data = pt_28,
-    aes(longitude, latitude, shape = "28 ka centroid"),
-    size = 3, fill = "white", colour = "black", stroke = 0.6
-  ) +
-  geom_point(
-    data = pt_0,
-    aes(longitude, latitude, shape = "Present centroid"),
-    size = 3, fill = "yellow", colour = "black", stroke = 0.6
-  ) +
-
-  scale_color_viridis_c(
-    name = "Centroid Years BP",
-    option = "H",
-    limits = c(-40000, 0),
-    breaks = c(-40000, -30000, -20000, -10000, 0),
-    labels = c("40 ka", "30 ka", "20 ka", "10 ka", "0")
-  ) +
-  scale_shape_manual(
-    name   = "Centroids",
-    values = c("28 ka centroid" = 24,
-               "Present centroid" = 21)
-  ) +
-
-  # reset colour + shape for middens
-  ggnewscale::new_scale_fill() +    # reset fill scale
-  ggnewscale::new_scale_color() +   # reset colour scale
-  ggnewscale::new_scale("shape") +  # reset shape scale
-
-  geom_point(
-    data = m_plot_df,
-    aes(x = longitude, y = latitude, fill = when, shape = when),
-    colour = "black",
-    size = 2.7,
-    stroke = 0.4
-  ) +
-  scale_fill_manual(
-    name = "Dated middens",
-    values = c("28 ka" = "#E65100",
-               "0 ka"  = "#7C4DFF")
-  ) +
-  scale_shape_manual(
-    name = "Dated middens",
-    values = c("28 ka" = 24,
-               "0 ka"  = 21)
-  ) +
-
-  labs(x = "Longitude", y = "Latitude") +
-  theme_map_clean +
-  guides(
-    fill   = guide_colorbar(title.position = "top", order = 1),
-    colour = guide_colorbar(title.position = "top", order = 2),
-    shape  = guide_legend(title.position  = "top", order = 3)
-  )
-theme(
-  legend.position = "bottom",
-  legend.box = "vertical"
-)
-
-# ─────────────────────────────────────────────────────────
-# 5) Save + show
-# ─────────────────────────────────────────────────────────
-ggsave(
-  file.path(out_dir, "apicalis_figure_range_shift_0_vs_28ka_with_middens.png"),
-  p_single, width = 7.5, height = 6.5, dpi = 300, bg = "white"
-)
-saveRDS(p_single, file.path(out_dir, "apicalis_figure_range_shift_single.rds"))
-
-p_single
-
-```
-
 
 # Panels (a) & (b): histograms (full vs coarse) and persistence
 
@@ -1438,7 +1157,7 @@ plot_and_save_pdp("bio12", "Annual precipitation (mm)")
 suppressPackageStartupMessages({ library(rnaturalearth); library(rnaturalearthdata) })  # basemaps
 
 # ---- Build a simple df of midden XYs ----
-middens_df_2 <- middens_sf %>%
+middens_df_2 <- middens_sf_2 %>%                                               # assumes middens_sf_2 exists
   dplyr::mutate(
     longitude = sf::st_coordinates(.)[, 1],
     latitude  = sf::st_coordinates(.)[, 2]
