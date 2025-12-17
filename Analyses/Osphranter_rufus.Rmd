@@ -1,9 +1,10 @@
 ---
-title: "Apicalis cleaned"
+title: "Osphranter_rufus"
 author: "Annie"
-date: "2025-10-30"
+date: "2025-12-04"
 output: html_document
 ---
+
 
 ```{r setup, include=FALSE}
 # Set knitr defaults and seed for reproducibility
@@ -68,9 +69,9 @@ suppressPackageStartupMessages({                                                
 # Project paths
 
 ```{r paths}
-here::i_am("Analyses/Krapp apicalis cleaned.Rmd")                               # declare project root via here()
+here::i_am("Analyses/Osphranter_rufus.Rmd")                               # declare project root via here()
 
-results_dir   <- here("Results/stratified environmental sampling", "apicalis")     # figures/tables output
+results_dir   <- here("Results/stratified environmental sampling", "Osphranter_rufus")     # figures/tables output
 processed_dir <- here("Data", "processed")                                         # cleaned input data
 if (!dir.exists(results_dir)) dir.create(results_dir, recursive = TRUE)            # ensure results folder exists
 ```
@@ -99,10 +100,10 @@ theme_map_clean <- theme_minimal(base_size = 12) +                              
 pastclim::download_dataset("Krapp2021")                                             # make sure climate dataset is available
 ```
 
-# Read apicalis occurrences
+# Read Osphranter_rufus occurrences
 
-```{r read-apicalis}
-apicalis <- readr::read_csv(file.path(processed_dir, "apicalis_flat.csv"),         # load occurrences
+```{r read-Osphranter_rufus}
+Osphranter_rufus <- readr::read_csv(file.path(processed_dir, "Osphranter_rufus.csv"),         # load occurrences
                             show_col_types = FALSE) |>
   (\(x) { print(x); x })() |>                                                      # echo a preview for sanity
   sf::st_as_sf(coords = c("longitude", "latitude"), crs = 4326)                    # convert to sf (WGS84)
@@ -122,7 +123,7 @@ land_mask_current <- pastclim::get_land_mask(time_bp = 0, dataset = "Krapp2021")
 ggplot() +
   tidyterra::geom_spatraster(data = land_mask_current, aes()) +                     # draw land mask
   tidyterra::scale_fill_terrain_c() +                                               # simple palette
-  geom_sf(data = apicalis, aes(col = time_bp)) +                                    # plot points coloured by time
+  geom_sf(data = Osphranter_rufus, aes(col = time_bp)) +                                    # plot points coloured by time
   coord_sf(xlim = xlim, ylim = ylim, expand = FALSE)                                                # map window
 ```
 
@@ -141,8 +142,8 @@ climate_full <- pastclim::region_series(                                        
 
 ```{r spatial-filter}
 set.seed(123)                                                                       # reproducible thinning
-apicalis <- thin_by_dist(apicalis, dist_min = km2m(50))                             # remove points <50 km apart
-NROW(apicalis)                                                                       # report retained count
+Osphranter_rufus <- thin_by_dist(Osphranter_rufus, dist_min = km2m(50))                             # remove points <50 km apart
+NROW(Osphranter_rufus)                                                                       # report retained count
 ```
 #Grid-resolution-optimisation
 NOTE: This is slow but only needs to be run once.
@@ -193,9 +194,9 @@ env_space_1950 <- c(climate_full[[1]][[800]],                                   
 
 ```{r pseudo-abs-env}
 library(scales)                                                                     # for alpha()
-apicalis3 <- paSampling(                                                            # sample pseudo-absences
+Osphranter_rufus3 <- paSampling(                                                            # sample pseudo-absences
   env.rast = env_space_1950,                                                        # env raster stack at ~present
-  pres     = apicalis %>% dplyr::filter(time_bp == -300),                           # use ~1950 AD presences
+  pres     = Osphranter_rufus %>% dplyr::filter(time_bp == -1),                           # use ~1950 AD presences
   thres    = 0.75,                                                                  # env distance threshold
   n.tr     = 9,                                                                     # trials per grid cell
   grid.res = 9                                                                      # grid resolution for sampling
@@ -205,9 +206,9 @@ apicalis3 <- paSampling(                                                        
 # Quick visual check of pseudo-absences vs presences
 pseudoabsence_map <- ggplot() +
   geom_sf(data = australia_outline, fill = alpha("#C4C4C4", 0.5), color = "grey50") +
-  geom_point(data = apicalis3, aes(x, y, shape = "Pseudo Absence", fill = "Pseudo Absence"),
+  geom_point(data = Osphranter_rufus3, aes(x, y, shape = "Pseudo Absence", fill = "Pseudo Absence"),
              color = "black", size = 2.5, stroke = 0.3) +
-  geom_sf(data = apicalis |> dplyr::filter(time_bp == -300),
+  geom_sf(data = Osphranter_rufus |> dplyr::filter(time_bp == -300),
           aes(fill = "Presence", shape = "Presence"),
           color = "black", size = 2.5, stroke = 0.3) +
   scale_fill_manual(values = c("Presence" = "#A100FA", "Pseudo Absence" = "#FF7E1D"), name = "Legend") +
@@ -232,17 +233,17 @@ ggsave(file.path(results_dir, "pseudo_absences_envspace.png"), pseudoabsence_map
 # Extract climate for points
 
 ```{r extract-climate}
-apicalis_df <- apicalis |>                                                          # start with sf presences
-  dplyr::bind_cols(sf::st_coordinates(apicalis)) |>                                 # add lon/lat columns
+Osphranter_rufus_df <- Osphranter_rufus |>                                                          # start with sf presences
+  dplyr::bind_cols(sf::st_coordinates(Osphranter_rufus)) |>                                 # add lon/lat columns
   dplyr::rename(x = X, y = Y) |>                                                    # rename to x/y
   dplyr::mutate(percP = "pres") |>                                                  # label as presence
-  dplyr::bind_rows(apicalis3) |>                                                    # append pseudo-absences
-  dplyr::mutate(time_bp = -300) |>                                                  # time slice to extract
+  dplyr::bind_rows(Osphranter_rufus3) |>                                                    # append pseudo-absences
+  dplyr::mutate(time_bp = -1) |>                                                  # time slice to extract
   as.data.frame() |>                                                                
   dplyr::select(-geometry)                                                          # drop geometry
 
-apicalis_df <- location_slice_from_region_series(                                   # extract env time slice
-  apicalis_df,
+Osphranter_rufus_df <- location_slice_from_region_series(                                   # extract env time slice
+  Osphranter_rufus_df,
   region_series = climate_full
 )
 ```
@@ -250,15 +251,15 @@ apicalis_df <- location_slice_from_region_series(                               
 # Add climate back and cast to sf
 
 ```{r add-climate-sf}
-apicalis4 <- apicalis |>                                                            # rebuild sf with env vars
-  dplyr::bind_cols(sf::st_coordinates(apicalis)) |>
+Osphranter_rufus4 <- Osphranter_rufus |>                                                            # rebuild sf with env vars
+  dplyr::bind_cols(sf::st_coordinates(Osphranter_rufus)) |>
   dplyr::rename(x = X, y = Y) |>
   dplyr::mutate(percP = "pres") |>
-  dplyr::bind_rows(apicalis3) |>
-  dplyr::mutate(time_bp = -300) |>
+  dplyr::bind_rows(Osphranter_rufus3) |>
+  dplyr::mutate(time_bp = -1) |>
   as.data.frame() |>
   dplyr::select(-geometry) |>
-  dplyr::bind_cols(apicalis_df[, c("bio05", "bio06", "bio12")]) |>                 # attach env predictors
+  dplyr::bind_cols(Osphranter_rufus_df[, c("bio05", "bio06", "bio12")]) |>                 # attach env predictors
   dplyr::filter(!is.na(.data$bio05)) |>
   dplyr::mutate(percP = dplyr::if_else(percP == "pabs", "pseudoabsence", "presence")) |>
   sf::st_as_sf(coords = c("x", "y"), crs = 4326)                                   # back to sf
@@ -267,15 +268,15 @@ apicalis4 <- apicalis |>                                                        
 # Recipe
 
 ```{r recipe}
-apicalis_rec <- recipes::recipe(apicalis4, formula = percP ~ bio05 + bio06 + bio12) # model formula
-apicalis_rec                                                                        # print recipe summary
+Osphranter_rufus_rec <- recipes::recipe(Osphranter_rufus4, formula = percP ~ bio05 + bio06 + bio12) # model formula
+Osphranter_rufus_rec                                                                        # print recipe summary
 ```
 
 # Models & workflows
 
 ```{r models}
-apicalis_models <- workflowsets::workflow_set(                                      # define model set
-  preproc = list(default = apicalis_rec),
+Osphranter_rufus_models <- workflowsets::workflow_set(                                      # define model set
+  preproc = list(default = Osphranter_rufus_rec),
   models  = list(
     glm = sdm_spec_glm(),                                                           # GLM
     gam = sdm_spec_gam(),                                                           # GAM
@@ -296,17 +297,17 @@ apicalis_models <- workflowsets::workflow_set(                                  
 
 ```{r cv}
 set.seed(1005)                                                                      # CV reproducibility
-apicalis_cv <- spatial_block_cv(apicalis4, v = 5)                                   # spatial CV folds
-autoplot(apicalis_cv)                                                               # quick diagnostics plot
+Osphranter_rufus_cv <- spatial_block_cv(Osphranter_rufus4, v = 5)                                   # spatial CV folds
+autoplot(Osphranter_rufus_cv)                                                               # quick diagnostics plot
 ```
 
 # Tune
 
 ```{r tune}
 set.seed(123)                                                                       # tuning reproducibility
-apicalis_models <- apicalis_models |>
+Osphranter_rufus_models <- Osphranter_rufus_models |>
   workflow_map("tune_grid",
-               resamples = apicalis_cv,                                             # use spatial CV
+               resamples = Osphranter_rufus_cv,                                             # use spatial CV
                grid = 5,                                                            # grid size
                metrics = sdm_metric_set(),                                          # SDM metrics incl. TSS
                verbose = TRUE)
@@ -315,11 +316,11 @@ apicalis_models <- apicalis_models |>
 # Build ensemble & inspect choices
 
 ```{r ensemble}
-apicalis_ensemble <- simple_ensemble() |>                                           # start ensemble
-  add_member(apicalis_models, metric = "tss_max")                                   # pick best by TSS
+Osphranter_rufus_ensemble <- simple_ensemble() |>                                           # start ensemble
+  add_member(Osphranter_rufus_models, metric = "tss_max")                                   # pick best by TSS
 
 # Summarise chosen hyperparameters and TSS per workflow
-chosen <- apicalis_models |>
+chosen <- Osphranter_rufus_models |>
   dplyr::mutate(
     best = purrr::map(result, ~ tune::select_best(.x, metric = "tss_max")),
     tss  = purrr::map_dbl(result, ~ tune::show_best(.x, metric = "tss_max", n = 1)$mean),
@@ -345,7 +346,7 @@ color_map <- c(
 )
 
 # Collect fold metrics and draw
-perf_data <- apicalis_models |>
+perf_data <- Osphranter_rufus_models |>
   dplyr::mutate(metrics = purrr::map(result, collect_metrics, summarize = FALSE)) |>
   dplyr::select(wflow_id, metrics) |>
   tidyr::unnest(metrics) |>
@@ -386,7 +387,7 @@ perf_plot                                                                       
 # ─────────────────────────────────────────────────────────────
 
 # Extract mean AUC and Boyce as well as TSS (already computed above)
-stats_summary <- apicalis_models |>
+stats_summary <- Osphranter_rufus_models |>
   dplyr::mutate(
     auc    = purrr::map_dbl(result, ~ tune::show_best(.x, metric = "roc_auc",  n = 1)$mean),
     boyce  = purrr::map_dbl(result, ~ tune::show_best(.x, metric = "boyce_cont", n = 1)$mean),
@@ -403,7 +404,119 @@ cat("\n\n===== Ensemble Model Performance Summary =====\n")
 print(stats_summary)
 cat("================================================\n\n")
 ```
+```{r ensemble}
+# ---- Build ensemble object (placeholder) ----
+# We'll fill this with the best-ranked workflow below
+# (simple 'best-of-set' ensemble)
+# NOTE: Osphranter_rufus_models is your workflow_set with tuned results
 
+# Summarise chosen hyperparameters and TSS per workflow (as before)
+Osphranter_rufus_ensemble_dummy <- simple_ensemble()                                    # keep for interface
+
+chosen <- Osphranter_rufus_models |>
+  dplyr::mutate(
+    best = purrr::map(result, ~ tune::select_best(.x, metric = "tss_max")),
+    tss  = purrr::map_dbl(result, ~ tune::show_best(.x, metric = "tss_max", n = 1)$mean),
+    best = purrr::map_chr(best, ~ paste(names(.x), .x, sep = "=", collapse = "; "))
+  ) |>
+  dplyr::transmute(wflow_id, best, tss)
+print(chosen)
+
+# ---- Multi-metric summary and ranking (AUC, Boyce, TSS) ----
+metrics_summary <- Osphranter_rufus_models |>
+  dplyr::mutate(
+    auc   = purrr::map_dbl(result, ~ tune::show_best(.x, metric = "roc_auc",    n = 1)$mean),
+    boyce = purrr::map_dbl(result, ~ tune::show_best(.x, metric = "boyce_cont", n = 1)$mean),
+    tss   = purrr::map_dbl(result, ~ tune::show_best(.x, metric = "tss_max",    n = 1)$mean)
+  ) |>
+  dplyr::transmute(
+    wflow_id,
+    Model = workflow_labels[wflow_id],
+    AUC   = auc,
+    Boyce = boyce,
+    TSS   = tss
+  ) |>
+  dplyr::mutate(
+    rank_auc   = dplyr::min_rank(dplyr::desc(AUC)),
+    rank_boyce = dplyr::min_rank(dplyr::desc(Boyce)),
+    rank_tss   = dplyr::min_rank(dplyr::desc(TSS)),
+    rank_sum   = rank_auc + rank_boyce + rank_tss
+  )
+
+cat("\n\n===== Multi-metric ranking (AUC, Boyce, TSS) =====\n")
+print(
+  metrics_summary |>
+    dplyr::arrange(rank_sum) |>
+    dplyr::select(Model, AUC, Boyce, TSS, rank_auc, rank_boyce, rank_tss, rank_sum)
+)
+cat("===================================================\n\n")
+
+# ---- Select best workflow based on combined rank ----
+best_wflow_id <- metrics_summary$wflow_id[which.min(metrics_summary$rank_sum)]
+cat("Best workflow (multi-metric rank):", best_wflow_id, "\n")
+
+best_model <- Osphranter_rufus_models |>
+  dplyr::filter(wflow_id == best_wflow_id)
+
+# ---- Build 'ensemble' from the best-ranked workflow ----
+Osphranter_rufus_ensemble <- simple_ensemble() |>
+  add_member(best_model, metric = "tss_max")    # metric irrelevant here; only one member
+
+# ---- Fold-level performance boxplots (unchanged) ----
+workflow_labels <- c(
+  default_gam = "Generalised Additive Model",
+  default_gbm = "Boosted Tree",
+  default_glm = "Generalised Linear Model",
+  default_rf  = "Random Forest"
+)
+model_order <- c("Generalised Linear Model", "Generalised Additive Model",
+                 "Random Forest", "Boosted Tree")
+metric_labels <- c(boyce_cont = "Boyce Index", roc_auc = "AUC", tss_max = "TSS")
+color_map <- c(
+  "Generalised Additive Model" = "#FF61C3",
+  "Boosted Tree"               = "#00B140",
+  "Generalised Linear Model"   = "#00BFFF",
+  "Random Forest"              = "#BC43FF"
+)
+
+perf_data <- Osphranter_rufus_models |>
+  dplyr::mutate(metrics = purrr::map(result, collect_metrics, summarize = FALSE)) |>
+  dplyr::select(wflow_id, metrics) |>
+  tidyr::unnest(metrics) |>
+  dplyr::filter(.metric %in% names(metric_labels)) |>
+  dplyr::mutate(
+    model        = factor(workflow_labels[wflow_id], levels = model_order),
+    metric_label = factor(metric_labels[.metric], levels = c("Boyce Index", "AUC", "TSS"))
+  )
+
+perf_plot <- ggplot(perf_data, aes(x = model, y = .estimate, fill = model)) +
+  geom_boxplot(width = 0.6, alpha = 0.9, outlier.shape = NA) +
+  geom_jitter(aes(color = model), size = 1.3, width = 0.15, alpha = 0.4, stroke = 0.3, shape = 21) +
+  scale_fill_manual(values = color_map, name = "Model Type") +
+  scale_color_manual(values = rep("black", length(model_order)), guide = "none") +
+  facet_wrap(~ metric_label, scales = "free_y") +
+  labs(title = "Model performance across algorithms (fold-level)", x = NULL, y = "Performance metric") +
+  theme_minimal(base_size = 12) +
+  theme(
+    panel.background  = element_rect(fill = "#EEEEEE", color = NA),
+    plot.background   = element_rect(fill = "white", color = NA),
+    panel.grid.major  = element_line(color = "white"),
+    panel.grid.minor  = element_blank(),
+    axis.text.x       = element_blank(),
+    axis.ticks.x      = element_blank(),
+    legend.position   = "right",
+    legend.direction  = "vertical",
+    legend.title      = element_text(size = 11),
+    legend.text       = element_text(size = 10),
+    plot.title        = element_text(face = "bold", size = 13),
+    strip.text        = element_text(margin = margin(b = 5))
+  )
+
+ggsave(file.path(results_dir, "ensemble", "ensemble_performance_clean.png"),
+       perf_plot, width = 8, height = 5, dpi = 300)
+
+perf_plot
+```
 # LGM snapshot
 
 ```{r lgm}
@@ -412,7 +525,7 @@ climate_lgm <- terra::rast(list(climate_full[[1]][[779]],                       
                                 climate_full[[3]][[779]]))
 names(climate_lgm) <- c("bio05", "bio06", "bio12")                                  # name bands
 
-prediction_lgm <- predict_raster(apicalis_ensemble, climate_lgm)                    # project ensemble
+prediction_lgm <- predict_raster(Osphranter_rufus_ensemble, climate_lgm)                    # project ensemble
 
 ggplot() +
   tidyterra::geom_spatraster(data = prediction_lgm, aes(fill = mean)) +
@@ -423,7 +536,7 @@ ggplot() +
 # Save model as SpatRaster stack
 
 ```{r save-stack}
-apicalis_spatrast <- NULL                                                           # init empty stack
+Osphranter_rufus_spatrast <- NULL                                                           # init empty stack
 purrr::walk(760:800, function(timestep) {                                           # iterate timesteps
   year_bp <- time(climate_full[[1]])[timestep] - 1950                               # convert to years BP
   climate_snapshot <- terra::rast(list(                                             # assemble env snapshot
@@ -432,25 +545,25 @@ purrr::walk(760:800, function(timestep) {                                       
     climate_full[[3]][[timestep]]
   ))
   names(climate_snapshot) <- c("bio05", "bio06", "bio12")
-  prediction_raster <- predict_raster(apicalis_ensemble, climate_snapshot)          # predict suitability
-  apicalis_spatrast <<- if (is.null(apicalis_spatrast)) prediction_raster           # stack predictions
-                      else c(apicalis_spatrast, prediction_raster)
+  prediction_raster <- predict_raster(Osphranter_rufus_ensemble, climate_snapshot)          # predict suitability
+  Osphranter_rufus_spatrast <<- if (is.null(Osphranter_rufus_spatrast)) prediction_raster           # stack predictions
+                      else c(Osphranter_rufus_spatrast, prediction_raster)
 })
 
-time(apicalis_spatrast) <- time(climate_full[[1]])[760:800] - 1950                  # attach BP times
+time(Osphranter_rufus_spatrast) <- time(climate_full[[1]])[760:800] - 1950                  # attach BP times
 
-output_dir <- here("Results", "apicalis Krapp model")                               # output folder
+output_dir <- here("Results", "Osphranter_rufus Krapp model")                               # output folder
 if (!dir.exists(output_dir)) dir.create(output_dir, recursive = TRUE)
-writeRaster(apicalis_spatrast, filename = file.path(output_dir, "predictions_stack.tif"),
+writeRaster(Osphranter_rufus_spatrast, filename = file.path(output_dir, "predictions_stack.tif"),
             overwrite = TRUE)                                                       # write GeoTIFF
 ```
 
 # Stack o' maps
 
- ```{r stack-o-maps, dependson="globals"}
+```{r stack-o-maps, dependson="globals"}
 suppressPackageStartupMessages({ library(magick) })                                 # image post-processing
 stopifnot(exists("australia_outline"), exists("results_dir"),                       # guardrails
-          exists("climate_full"), exists("apicalis_ensemble"))
+          exists("climate_full"), exists("Osphranter_rufus_ensemble"))
 
 out_dir <- file.path(results_dir, "model"); if (!dir.exists(out_dir)) dir.create(out_dir, recursive = TRUE)
 
@@ -462,14 +575,14 @@ purrr::walk(760:800, function(timestep) {                                       
     climate_full[[3]][[timestep]]
   ))
   names(climate_snapshot) <- c("bio05", "bio06", "bio12")
-  prediction_raster <- predict_raster(apicalis_ensemble, climate_snapshot)
+  prediction_raster <- predict_raster(Osphranter_rufus_ensemble, climate_snapshot)
 
   p <- ggplot() +                                                                   # draw map
     tidyterra::geom_spatraster(data = prediction_raster, aes(fill = mean)) +
     tidyterra::scale_fill_terrain_c(name = "Probability\nof occurrence") +
     geom_sf(data = australia_outline, fill = NA, color = "grey20", linewidth = 0.3) +
     coord_sf(xlim = xlim, ylim = ylim, expand = FALSE) +
-    ggtitle(bquote(italic("Leporillus apicalis") * " — Years BP: " * .(year_bp))) +
+    ggtitle(bquote(italic("Leporillus Osphranter_rufus") * " — Years BP: " * .(year_bp))) +
     theme_minimal() +
     theme(
       plot.background  = element_rect(fill = "white", color = NA),
@@ -479,7 +592,7 @@ purrr::walk(760:800, function(timestep) {                                       
       plot.margin      = margin(0, 0, 0, 0, unit = "pt")
     )
 
-  plot_path <- file.path(out_dir, paste0("apicalis_map_", year_bp, ".png"))         # save path
+  plot_path <- file.path(out_dir, paste0("Osphranter_rufus_map_", year_bp, ".png"))         # save path
   ggsave(plot_path, p, width = 7, height = 7, dpi = 300, bg = "transparent")       # save plot
 
   img <- image_read(plot_path)                                                      # trim/border
@@ -491,15 +604,15 @@ purrr::walk(760:800, function(timestep) {                                       
 # 6-image panel (model only)
 
 ```{r six-panel}
-raster_times  <- terra::time(apicalis_spatrast)                                     # all BP times
-target_times  <- c(-40000, -26000, -21000, -12000, -6000, 0)                        # selected panels
+raster_times  <- terra::time(Osphranter_rufus_spatrast)                                     # all BP times
+target_times  <- c(-21000, -17000, -15000, -11000, -6000, 0)                        # selected panels
 matched_idx   <- match(target_times, raster_times)                                   # index match
 panel_tags    <- letters[seq_along(target_times)]                                    # (a)-(f)
 
 panel_plots <- pmap(
   list(idx = matched_idx, year = target_times, tag = panel_tags),
   function(idx, year_bp, tag_label) {
-    current_prediction <- apicalis_spatrast[[idx]]                                  # pick raster layer
+    current_prediction <- Osphranter_rufus_spatrast[[idx]]                                  # pick raster layer
     ggplot() +
       tidyterra::geom_spatraster(data = current_prediction, aes(fill = mean)) +
       tidyterra::scale_fill_terrain_c(name = "Probability\nof occurrence", limits = c(0, 1)) +
@@ -525,10 +638,10 @@ panel_plots <- pmap(
 )
 
 final_panel <- wrap_plots(panel_plots, ncol = 2, guides = "collect") +              # combine panels
-  plot_annotation(title = expression(italic("Leporillus apicalis") * " SDM model predictions"),
+  plot_annotation(title = expression(italic("Leporillus Osphranter_rufus") * " SDM model predictions"),
                   theme = theme(plot.title = element_text(size = 14, face = "bold", hjust = 0.5)))
 
-ggsave(file.path(results_dir, "apicalis_model_panel.png"), final_panel,             # save figure
+ggsave(file.path(results_dir, "Osphranter_rufus_model_panel.png"), final_panel,             # save figure
        width = 10, height = 9, dpi = 300)
 ```
 
@@ -536,15 +649,15 @@ ggsave(file.path(results_dir, "apicalis_model_panel.png"), final_panel,         
 
 # Middens validation prep
 
-```{r middens-load}
-dated_middens <- read.csv(file.path(processed_dir, "dated_middens.csv"))             # load midden metadata
+ ```{r middens-load}
+dated_middens <- read.csv(file.path(processed_dir, "datedmiddens.csv"))             # load midden metadata
 
 middens_sf <- dated_middens |>                                                      # to sf, WGS84
   sf::st_as_sf(coords = c("longitude", "latitude"), crs = 4326) |>
-  sf::st_transform(crs = terra::crs(apicalis_spatrast))                             # match raster CRS
+  sf::st_transform(crs = terra::crs(Osphranter_rufus_spatrast))                             # match raster CRS
 
 middens_vect <- terra::vect(middens_sf)                                             # to terra vect for extract
-rt <- as.numeric(terra::time(apicalis_spatrast))                                    # numeric BP timesteps
+rt <- as.numeric(terra::time(Osphranter_rufus_spatrast))                                    # numeric BP timesteps
 
 # Bin each midden to nearest raster timestep and convert to calendar date
 middens_sf <- middens_sf |>
@@ -555,7 +668,7 @@ middens_sf <- middens_sf |>
   )
 
 # Extract predicted suitability at each midden’s nearest timestep
-extracted_values <- terra::extract(apicalis_spatrast, middens_vect, ID = FALSE)
+extracted_values <- terra::extract(Osphranter_rufus_spatrast, middens_vect, ID = FALSE)
 vals_mat <- as.matrix(extracted_values)
 middens_sf$predicted <- vals_mat[cbind(seq_len(nrow(middens_sf)), middens_sf$nearest_idx)]
 
@@ -592,7 +705,7 @@ australia_outline <- sf::st_as_sf(world_map) %>%
   dplyr::filter(ADMIN == "Australia")
 
 # Extract the time stamps from the prediction stack
-raster_timesteps <- time(apicalis_spatrast)
+raster_timesteps <- time(Osphranter_rufus_spatrast)
 
 # Loop through each time slice and build a map
 walk(seq_along(raster_timesteps), function(i) {
@@ -605,7 +718,7 @@ walk(seq_along(raster_timesteps), function(i) {
     dplyr::filter(abs(time_bp - current_year_bp) <= 500)
 
   # Pull the raster for this timestep
-  current_prediction <- apicalis_spatrast[[i]]
+  current_prediction <- Osphranter_rufus_spatrast[[i]]
 
   # Build plot
   p <- ggplot() +
@@ -616,7 +729,7 @@ walk(seq_along(raster_timesteps), function(i) {
             fill = "#FF3399", color = "black",
             size = 2, stroke = 0.4) +
     coord_sf(xlim = xlim, ylim = ylim, expand = FALSE) +
-    ggtitle(bquote(italic("Leporillus apicalis") *
+    ggtitle(bquote(italic("Leporillus Osphranter_rufus") *
                    " SDM with Middens — Years BP: " *
                    .(current_year_bp))) +
     theme_minimal(base_size = 11) +
@@ -631,7 +744,7 @@ walk(seq_along(raster_timesteps), function(i) {
   # Path for saving output
   plot_path <- file.path(results_dir,
                          "midden maps",
-                         paste0("apicalis_middens_", current_year_bp, ".png"))
+                         paste0("Osphranter_rufus_middens_", current_year_bp, ".png"))
 
   # Ensure output directory exists
   dir.create(dirname(plot_path), showWarnings = FALSE, recursive = TRUE)
@@ -653,7 +766,7 @@ walk(seq_along(raster_timesteps), function(i) {
 
  ```{r six-panel-middens}
 # Extract all raster timesteps
-raster_times <- terra::time(apicalis_spatrast)
+raster_times <- terra::time(Osphranter_rufus_spatrast)
 
 # Target slices to display (Years BP)
 target_times <- c(-28000, -15000, -12000, -7000, -4000, 0)
@@ -670,7 +783,7 @@ panel_plots <- pmap(
   function(idx, year_bp, tag_label) {
 
     # Prediction raster at that timestep
-    current_prediction <- apicalis_spatrast[[idx]]
+    current_prediction <- Osphranter_rufus_spatrast[[idx]]
 
     # Middens near that timestep (±500 yrs)
     current_middens <- middens_sf %>%
@@ -751,7 +864,7 @@ panel_plots <- pmap(
 # Combine panels + shared legend + title
 final_panel <- wrap_plots(panel_plots, ncol = 2, guides = "collect") +
   plot_annotation(
-    title = "Leporillus apicalis SDM with middens",
+    title = "Leporillus Osphranter_rufus SDM with middens",
     theme = theme(
       plot.title = element_text(size = 14, face = "bold", hjust = 0.5)
     )
@@ -775,20 +888,20 @@ ggsave(
 
 # Threshold, pseudo-absences (time-aware), and evaluation
 
-```{r tss-maxsss}
+ ```{r tss-maxsss}
 
 set.seed(42)
 
 # ---- Bootstrap a starting threshold for time-aware pseudo-absences ----
 threshold_init <- 0.2                                                       # initial cut-off
-apicalis_binary_init <- terra::app(x = apicalis_spatrast, fun = \(i) i > threshold_init)  # binarise stack
-terra::time(apicalis_binary_init) <- terra::time(apicalis_spatrast) |> pastclim::ybp2date() # set dates
-apicalis_rs_init <- terra::sds(apicalis_binary_init); names(apicalis_rs_init) <- "pres_abs" # wrap as sds
+Osphranter_rufus_binary_init <- terra::app(x = Osphranter_rufus_spatrast, fun = \(i) i > threshold_init)  # binarise stack
+terra::time(Osphranter_rufus_binary_init) <- terra::time(Osphranter_rufus_spatrast) |> pastclim::ybp2date() # set dates
+Osphranter_rufus_rs_init <- terra::sds(Osphranter_rufus_binary_init); names(Osphranter_rufus_rs_init) <- "pres_abs" # wrap as sds
 
 # ---- Sample pseudo-absences with temporal & spatial rules ----
 pseudoabs_init <- sample_pseudoabs_time(
   data            = dated_middens,                                            # dated midden points
-  raster          = apicalis_rs_init,                                         # binary model through time
+  raster          = Osphranter_rufus_rs_init,                                         # binary model through time
   n_per_presence  = 3,                                                        # 3 PAs per presence
   time_col        = "time_bp",                                                # input time column (BP)
   lubridate_fun   = pastclim::ybp2date,                                       # BP -> calendar converter
@@ -797,27 +910,27 @@ pseudoabs_init <- sample_pseudoabs_time(
 )
 
 # ---- Extract continuous predictions matched to each row’s nearest timestep ----
-rt <- as.numeric(terra::time(apicalis_spatrast))                              # all model timesteps (BP)
+rt <- as.numeric(terra::time(Osphranter_rufus_spatrast))                              # all model timesteps (BP)
 
 # Presence values (match each midden to nearest model time slice)
 presence_sf <- sf::st_as_sf(dated_middens, coords = c("longitude", "latitude"), crs = 4326) |>
-  sf::st_transform(crs(apicalis_spatrast)) |>
+  sf::st_transform(crs(Osphranter_rufus_spatrast)) |>
   dplyr::mutate(
     nearest_time = sapply(time_bp, function(x) rt[which.min(abs(rt - x))]),   # nearest model time
     nearest_idx  = match(nearest_time, rt)                                    # index for extraction
   )
-pres_mat <- terra::extract(apicalis_spatrast, terra::vect(presence_sf), ID = FALSE)
+pres_mat <- terra::extract(Osphranter_rufus_spatrast, terra::vect(presence_sf), ID = FALSE)
 presence_vals <- as.matrix(pres_mat)[cbind(seq_len(nrow(presence_sf)), presence_sf$nearest_idx)]
 
 # Pseudo-absence values (same time-matching as above)
 pseudoabs_sf <- sf::st_as_sf(pseudoabs_init, coords = c("longitude", "latitude"), crs = 4326) |>
-  sf::st_transform(crs(apicalis_spatrast)) |>
+  sf::st_transform(crs(Osphranter_rufus_spatrast)) |>
   dplyr::mutate(
     time_bp      = pastclim::date2ybp(time_step),                             # convert to BP
     nearest_time = sapply(time_bp, function(x) rt[which.min(abs(rt - x))]),
     nearest_idx  = match(nearest_time, rt)
   )
-pseudo_mat <- terra::extract(apicalis_spatrast, terra::vect(pseudoabs_sf), ID = FALSE)
+pseudo_mat <- terra::extract(Osphranter_rufus_spatrast, terra::vect(pseudoabs_sf), ID = FALSE)
 pseudoabs_vals <- as.matrix(pseudo_mat)[cbind(seq_len(nrow(pseudoabs_sf)), pseudoabs_sf$nearest_idx)]
 
 # ---- Grid search for the MaxSSS threshold (using TSS = sens + spec - 1) ----
@@ -843,14 +956,14 @@ opt_threshold <- results$threshold[which.max(results$TSS)]                     #
 cat("Optimal Threshold (maxSSS):", opt_threshold, "\n")
 
 # ---- Rebuild binary stack at optimal threshold ----
-apicalis_binary <- terra::app(x = apicalis_spatrast, fun = \(i) i > opt_threshold) # binarise with optimum
-terra::time(apicalis_binary) <- terra::time(apicalis_spatrast) |> pastclim::ybp2date() # set dates
-apicalis_rs <- terra::sds(apicalis_binary); names(apicalis_rs) <- "pres_abs"         # sds wrapper
+Osphranter_rufus_binary <- terra::app(x = Osphranter_rufus_spatrast, fun = \(i) i > opt_threshold) # binarise with optimum
+terra::time(Osphranter_rufus_binary) <- terra::time(Osphranter_rufus_spatrast) |> pastclim::ybp2date() # set dates
+Osphranter_rufus_rs <- terra::sds(Osphranter_rufus_binary); names(Osphranter_rufus_rs) <- "pres_abs"         # sds wrapper
 
 # ---- Resample pseudo-absences with final thresholded stack ----
 pseudoabs <- sample_pseudoabs_time(
   data            = dated_middens,
-  raster          = apicalis_rs,
+  raster          = Osphranter_rufus_rs,
   n_per_presence  = 3,
   time_col        = "time_bp",
   lubridate_fun   = pastclim::ybp2date,
@@ -864,15 +977,9 @@ pres_abs_observed <- pseudoabs |>
   dplyr::select(-class, -time_step) |>
   tibble::rowid_to_column("name")                                             # ensure row id
 
-pres_abs_pred <- location_slice_from_region_series(
-  x            = pres_abs_observed,
-  region_series = apicalis_rs,
-  coords       = c("longitude", "latitude"),
-  nn_interpol  = FALSE,   # <- turn OFF neighbour interpolation
-  buffer       = FALSE
+pres_abs_pred <- location_slice_from_region_series(                           # extract model class
+  x = pres_abs_observed, region_series = Osphranter_rufus_rs
 )
-
-
 pres_abs_pred$class <- pseudoabs$class                                        # add true class
 
 # Confusion components
@@ -893,74 +1000,74 @@ cat(sprintf("Sorensen: %.3f\n", sorensen))
 cat(sprintf("F2 score: %.3f\n", f2score))
 ```
 
-```{r apicalis-eval-1deg}
+```{r Osphranter_rufus-eval-1deg}
 
-stopifnot(exists("apicalis_spatrast"))
+stopifnot(exists("Osphranter_rufus_spatrast"))
 
 # Current resolution
-cur_res <- terra::res(apicalis_spatrast)
-message("Original apicalis_spatrast resolution (degrees):")
+cur_res <- terra::res(Osphranter_rufus_spatrast)
+message("Original Osphranter_rufus_spatrast resolution (degrees):")
 print(cur_res)
 
 # Work on a copy so we never touch the original stack
-apicalis_spatrast_eval <- apicalis_spatrast
+Osphranter_rufus_spatrast_eval <- Osphranter_rufus_spatrast
 
 # If resolution is ~0.5° x 0.5°, aggregate to ~1°; otherwise leave as-is
 if (all(abs(as.numeric(cur_res) - c(0.5, 0.5)) < 1e-6)) {
-  message("Aggregating apicalis_spatrast to ~1° for evaluation only...")
+  message("Aggregating Osphranter_rufus_spatrast to ~1° for evaluation only...")
   
   # Store numeric BP times BEFORE aggregation
-  rt_bp <- as.numeric(terra::time(apicalis_spatrast_eval))
+  rt_bp <- as.numeric(terra::time(Osphranter_rufus_spatrast_eval))
   
-  apicalis_spatrast_eval <- terra::aggregate(
-    x    = apicalis_spatrast_eval,
+  Osphranter_rufus_spatrast_eval <- terra::aggregate(
+    x    = Osphranter_rufus_spatrast_eval,
     fact = 2,
     fun  = "mean",
     na.rm = TRUE
   )
   
   # Re-attach numeric BP times
-  terra::time(apicalis_spatrast_eval) <- rt_bp
+  terra::time(Osphranter_rufus_spatrast_eval) <- rt_bp
   
 } else {
   message("Resolution is not 0.5° – skipping aggregation. Using existing resolution for evaluation.")
 }
 
 message("Evaluation stack resolution (degrees):")
-print(terra::res(apicalis_spatrast_eval))
+print(terra::res(Osphranter_rufus_spatrast_eval))
 ```
 
 # 1 degree Threshold, pseudo-absences (time-aware), and evaluation
 
-```{r 1 degree tss-maxsss}
+ ```{r 1 degree tss-maxsss}
 
 set.seed(42)
-stopifnot(exists("apicalis_spatrast_eval"), exists("dated_middens"))
+stopifnot(exists("Osphranter_rufus_spatrast_eval"), exists("dated_middens"))
 
 # ---- Time vector in years BP (numeric) ----
-rt_bp <- as.numeric(terra::time(apicalis_spatrast_eval))
+rt_bp <- as.numeric(terra::time(Osphranter_rufus_spatrast_eval))
 if (!is.numeric(rt_bp)) {
-  stop("terra::time(apicalis_spatrast_eval) must be numeric years BP before calling pastclim::ybp2date().")
+  stop("terra::time(Osphranter_rufus_spatrast_eval) must be numeric years BP before calling pastclim::ybp2date().")
 }
 
 # ---- Bootstrap a starting threshold for time-aware pseudo-absences ----
 threshold_init <- 0.27                                        # initial cut-off
 
-apicalis_binary_init <- terra::app(
-  x   = apicalis_spatrast_eval,
+Osphranter_rufus_binary_init <- terra::app(
+  x   = Osphranter_rufus_spatrast_eval,
   fun = \(i) i > threshold_init
 )
 
 # Set dates on the binary stack (needed by sample_pseudoabs_time)
-terra::time(apicalis_binary_init) <- pastclim::ybp2date(rt_bp)
+terra::time(Osphranter_rufus_binary_init) <- pastclim::ybp2date(rt_bp)
 
-apicalis_rs_init <- terra::sds(apicalis_binary_init)
-names(apicalis_rs_init) <- "pres_abs"
+Osphranter_rufus_rs_init <- terra::sds(Osphranter_rufus_binary_init)
+names(Osphranter_rufus_rs_init) <- "pres_abs"
 
 # ---- Sample pseudo-absences with temporal & spatial rules ----
 pseudoabs_init <- sample_pseudoabs_time(
   data            = dated_middens,                 # dated midden points
-  raster          = apicalis_rs_init,              # binary model through time (1° here)
+  raster          = Osphranter_rufus_rs_init,              # binary model through time (1° here)
   n_per_presence  = 3,                             # 3 PAs per presence
   time_col        = "time_bp",                     # input time column (BP)
   lubridate_fun   = pastclim::ybp2date,            # BP -> calendar date for matching
@@ -977,13 +1084,13 @@ presence_sf <- sf::st_as_sf(
   coords = c("longitude", "latitude"),
   crs    = 4326
 ) |>
-  sf::st_transform(crs(apicalis_spatrast_eval)) |>
+  sf::st_transform(crs(Osphranter_rufus_spatrast_eval)) |>
   dplyr::mutate(
     nearest_time = sapply(time_bp, function(x) rt[which.min(abs(rt - x))]),
     nearest_idx  = match(nearest_time, rt)
   )
 
-pres_mat <- terra::extract(apicalis_spatrast_eval, terra::vect(presence_sf), ID = FALSE)
+pres_mat <- terra::extract(Osphranter_rufus_spatrast_eval, terra::vect(presence_sf), ID = FALSE)
 presence_vals <- as.matrix(pres_mat)[cbind(seq_len(nrow(presence_sf)), presence_sf$nearest_idx)]
 
 # Pseudo-absence values (same time-matching as above)
@@ -992,14 +1099,14 @@ pseudoabs_sf <- sf::st_as_sf(
   coords = c("longitude", "latitude"),
   crs    = 4326
 ) |>
-  sf::st_transform(crs(apicalis_spatrast_eval)) |>
+  sf::st_transform(crs(Osphranter_rufus_spatrast_eval)) |>
   dplyr::mutate(
     time_bp      = pastclim::date2ybp(time_step),  # convert back to BP
     nearest_time = sapply(time_bp, function(x) rt[which.min(abs(rt - x))]),
     nearest_idx  = match(nearest_time, rt)
   )
 
-pseudo_mat <- terra::extract(apicalis_spatrast_eval, terra::vect(pseudoabs_sf), ID = FALSE)
+pseudo_mat <- terra::extract(Osphranter_rufus_spatrast_eval, terra::vect(pseudoabs_sf), ID = FALSE)
 pseudoabs_vals <- as.matrix(pseudo_mat)[cbind(seq_len(nrow(pseudoabs_sf)), pseudoabs_sf$nearest_idx)]
 
 # ---- Grid search for the MaxSSS threshold (using TSS = sens + spec - 1) ----
@@ -1031,19 +1138,19 @@ opt_threshold <- results$threshold[which.max(results$TSS)]
 cat("Optimal Threshold (maxSSS) at 1°:", opt_threshold, "\n")
 
 # ---- Rebuild binary stack at optimal threshold (1° eval stack) ----
-apicalis_binary <- terra::app(
-  x   = apicalis_spatrast_eval,
+Osphranter_rufus_binary <- terra::app(
+  x   = Osphranter_rufus_spatrast_eval,
   fun = \(i) i > opt_threshold
 )
-terra::time(apicalis_binary) <- pastclim::ybp2date(rt_bp)
+terra::time(Osphranter_rufus_binary) <- pastclim::ybp2date(rt_bp)
 
-apicalis_rs <- terra::sds(apicalis_binary)
-names(apicalis_rs) <- "pres_abs"
+Osphranter_rufus_rs <- terra::sds(Osphranter_rufus_binary)
+names(Osphranter_rufus_rs) <- "pres_abs"
 
 # ---- Resample pseudo-absences with final thresholded stack ----
 pseudoabs <- sample_pseudoabs_time(
   data            = dated_middens,
-  raster          = apicalis_rs,
+  raster          = Osphranter_rufus_rs,
   n_per_presence  = 3,
   time_col        = "time_bp",
   lubridate_fun   = pastclim::ybp2date,
@@ -1058,13 +1165,9 @@ pres_abs_observed <- pseudoabs |>
   tibble::rowid_to_column("name")
 
 pres_abs_pred <- location_slice_from_region_series(
-  x            = pres_abs_observed,
-  region_series = apicalis_rs,
-  coords       = c("longitude", "latitude"),
-  nn_interpol  = FALSE,   # <- turn OFF neighbour interpolation
-  buffer       = FALSE
+  x             = pres_abs_observed,
+  region_series = Osphranter_rufus_rs
 )
-
 pres_abs_pred$class <- pseudoabs$class
 
 a <- nrow(dplyr::filter(pres_abs_pred, class == "presence",  pres_abs == 1))  # TP
@@ -1089,7 +1192,7 @@ cat(sprintf("F2 score (1°): %.3f\n",        f2score))
 ```{r centroid-diff, dependson="globals"}
 
 # --- Output directory ---
-out_dir <- "C:/github/SNR_SDM/Results/stratified environmental sampling/apicalis"
+out_dir <- "C:/github/SNR_SDM/Results/stratified environmental sampling/Osphranter_rufus"
 dir.create(out_dir, recursive = TRUE, showWarnings = FALSE)
 
 suppressPackageStartupMessages({ library(ggnewscale) })
@@ -1097,8 +1200,8 @@ suppressPackageStartupMessages({ library(ggnewscale) })
 # ─────────────────────────────────────────────────────────
 # 1) Suitability-weighted centroids through time
 # ─────────────────────────────────────────────────────────
-apicalis_centroids <- lapply(seq_len(nlyr(apicalis_spatrast)), function(i) {
-  r      <- apicalis_spatrast[[i]]
+Osphranter_rufus_centroids <- lapply(seq_len(nlyr(Osphranter_rufus_spatrast)), function(i) {
+  r      <- Osphranter_rufus_spatrast[[i]]
   vals   <- terra::values(r)[,1]
   coords <- terra::crds(r, na.rm = FALSE)
   valid  <- is.finite(vals) & vals > 0
@@ -1109,24 +1212,24 @@ apicalis_centroids <- lapply(seq_len(nlyr(apicalis_spatrast)), function(i) {
   xy <- coords[valid,]
 
   data.frame(
-    time_bp   = terra::time(apicalis_spatrast)[i],
+    time_bp   = terra::time(Osphranter_rufus_spatrast)[i],
     longitude = weighted.mean(xy[,1], w),
     latitude  = weighted.mean(xy[,2], w)
   )
 }) |> dplyr::bind_rows()
 
 # Identify the 0 ka and 20 ka layers
-r_times <- as.numeric(terra::time(apicalis_spatrast))
+r_times <- as.numeric(terra::time(Osphranter_rufus_spatrast))
 idx_0   <- which.min(abs(r_times - 0))
 idx_21  <- which.min(abs(r_times + 20000))
 
-pt_0  <- apicalis_centroids[which.min(abs(apicalis_centroids$time_bp - 0)), , drop = FALSE]
-pt_20 <- apicalis_centroids[which.min(abs(apicalis_centroids$time_bp + 20000)), , drop = FALSE]
+pt_0  <- Osphranter_rufus_centroids[which.min(abs(Osphranter_rufus_centroids$time_bp - 0)), , drop = FALSE]
+pt_20 <- Osphranter_rufus_centroids[which.min(abs(Osphranter_rufus_centroids$time_bp + 20000)), , drop = FALSE]
 
 # ─────────────────────────────────────────────────────────
 # 2) Difference raster (0 ka − 20 ka) masked to Australia
 # ─────────────────────────────────────────────────────────
-r_diff <- apicalis_spatrast[[idx_0]] - apicalis_spatrast[[idx_20]]
+r_diff <- Osphranter_rufus_spatrast[[idx_0]] - Osphranter_rufus_spatrast[[idx_20]]
 names(r_diff) <- "diff"
 
 r_diff <- terra::mask(r_diff, terra::vect(australia_outline))
@@ -1184,12 +1287,12 @@ coord_sf(
 
   # centroid trajectory
   geom_path(
-    data = apicalis_centroids,
+    data = Osphranter_rufus_centroids,
     aes(longitude, latitude),
     colour = "black", linewidth = 0.7, alpha = 0.85
   ) +
   geom_point(
-    data = apicalis_centroids,
+    data = Osphranter_rufus_centroids,
     aes(longitude, latitude, colour = time_bp),
     size = 2
   ) +
@@ -1257,10 +1360,10 @@ theme(
 # 5) Save + show
 # ─────────────────────────────────────────────────────────
 ggsave(
-  file.path(out_dir, "apicalis_figure_range_shift_0_vs_20ka_with_middens.png"),
+  file.path(out_dir, "Osphranter_rufus_figure_range_shift_0_vs_20ka_with_middens.png"),
   p_single, width = 7.5, height = 6.5, dpi = 300, bg = "white"
 )
-saveRDS(p_single, file.path(out_dir, "apicalis_figure_range_shift_single_20ka.rds"))
+saveRDS(p_single, file.path(out_dir, "Osphranter_rufus_figure_range_shift_single_20ka.rds"))
 
 p_single
 
@@ -1297,7 +1400,7 @@ mid_df_full <- tibble(
   bin         = middens_sf$binned_time_bp
 )
 
-bg_df_full <- time_matched_background(middens_sf, apicalis_spatrast)
+bg_df_full <- time_matched_background(middens_sf, Osphranter_rufus_spatrast)
 
 plot_df_full <- bind_rows(mid_df_full, bg_df_full) |>
   filter(is.finite(suitability))
@@ -1334,7 +1437,7 @@ p_a_full <- ggplot(plot_df_full, aes(x = suitability, fill = group)) +
 
 print(p_a_full)
 ggsave(
-  file.path(results_dir, "apicalis_panel_a_full_hist.png"),
+  file.path(results_dir, "Osphranter_rufus_panel_a_full_hist.png"),
   p_a_full, width = w_single, height = h_single, dpi = dpi_out, bg = "white"
 )
 
@@ -1342,7 +1445,7 @@ ggsave(
 # --- Coarse resolution ---
 # =====================================================
 mid_vals_c <- terra::extract(
-  apicalis_spatrast_coarse,
+  Osphranter_rufus_spatrast_coarse,
   terra::vect(middens_sf),
   ID = FALSE
 ) |> as.matrix()
@@ -1356,7 +1459,7 @@ mid_df_c <- tibble(
   bin         = middens_sf$binned_time_bp
 )
 
-bg_df_c <- time_matched_background(middens_sf, apicalis_spatrast_coarse)
+bg_df_c <- time_matched_background(middens_sf, Osphranter_rufus_spatrast_coarse)
 
 plot_df_c <- bind_rows(mid_df_c, bg_df_c) |>
   filter(is.finite(suitability))
@@ -1393,7 +1496,7 @@ p_a_coarse <- ggplot(plot_df_c, aes(x = suitability, fill = group)) +
 
 print(p_a_coarse)
 ggsave(
-  file.path(results_dir, "apicalis_panel_a_coarse_hist.png"),
+  file.path(results_dir, "Osphranter_rufus_panel_a_coarse_hist.png"),
   p_a_coarse, width = w_single, height = h_single, dpi = dpi_out, bg = "white"
 )
 
@@ -1404,7 +1507,7 @@ ggsave(
 # =====================================================
 # --- Full resolution ---
 persist_full <- compute_persistence_strict(
-  rast = apicalis_spatrast, m_sf = middens_sf, thr = thr_b,
+  rast = Osphranter_rufus_spatrast, m_sf = middens_sf, thr = thr_b,
   include_current = include_current, lookback_ka = lookback_ka, step_years = step_years
 )
 x_max_b <- if (is.finite(lookback_ka)) lookback_ka else max(persist_full$persist_ka, na.rm = TRUE)
@@ -1424,12 +1527,12 @@ p_b_full <- ggplot(persist_full, aes(x = persist_ka)) +
         panel.grid.major = element_line(colour = "white"))
 
 print(p_b_full)
-ggsave(file.path(results_dir, "apicalis_panel_b_full_hist_thr035.png"), p_b_full,
+ggsave(file.path(results_dir, "Osphranter_rufus_panel_b_full_hist_thr035.png"), p_b_full,
        width = w_single, height = h_single, dpi = dpi_out, bg = "white")
 
 # --- Coarse resolution ---
 persist_coarse <- compute_persistence_strict(
-  rast = apicalis_spatrast_coarse, m_sf = middens_sf, thr = thr_b,
+  rast = Osphranter_rufus_spatrast_coarse, m_sf = middens_sf, thr = thr_b,
   include_current = include_current, lookback_ka = lookback_ka, step_years = step_years
 )
 
@@ -1448,7 +1551,7 @@ p_b_coarse <- ggplot(persist_coarse, aes(x = persist_ka)) +
         panel.grid.major = element_line(colour = "white"))
 
 print(p_b_coarse)
-ggsave(file.path(results_dir, "apicalis_panel_b_coarse_hist_thr035.png"), p_b_coarse,
+ggsave(file.path(results_dir, "Osphranter_rufus_panel_b_coarse_hist_thr035.png"), p_b_coarse,
        width = w_single, height = h_single, dpi = dpi_out, bg = "white")
 
 # =====================================================
@@ -1462,7 +1565,7 @@ p_b_tag <- ggdraw(p_b_coarse + labs(title = NULL)) +
 fig_ab  <- plot_grid(p_a_tag, p_b_tag, ncol = 1, rel_heights = c(1,1))
 print(fig_ab)
 
-ggsave(file.path(results_dir, "apicalis_figure_histograms_panels_ab_COARSE_thrB_035_VERTICAL.png"),
+ggsave(file.path(results_dir, "Osphranter_rufus_figure_histograms_panels_ab_COARSE_thrB_035_VERTICAL.png"),
        fig_ab, width = 7, height = 10, dpi = dpi_out, bg = "white")
 ```
 ```
@@ -1476,12 +1579,12 @@ suppressPackageStartupMessages({
 })                                                                              # quiet attaches
 
 # ---- Build explainer & output dir ----
-apicalis_explainer <- explain_tidysdm(apicalis_ensemble)                        # DALEX explainer
-apicalis_outdir <- file.path(results_dir, "variable_importance")
-dir.create(apicalis_outdir, showWarnings = FALSE, recursive = TRUE)
+Osphranter_rufus_explainer <- explain_tidysdm(Osphranter_rufus_ensemble)                        # DALEX explainer
+Osphranter_rufus_outdir <- file.path(results_dir, "variable_importance")
+dir.create(Osphranter_rufus_outdir, showWarnings = FALSE, recursive = TRUE)
 
 # ---- Aggregate permutation importance into a neat table ----
-apicalis_vip <- model_parts(explainer = apicalis_explainer) |>
+Osphranter_rufus_vip <- model_parts(explainer = Osphranter_rufus_explainer) |>
   dplyr::filter(!variable %in% c("_baseline_", "_full_model_")) |>
   dplyr::group_by(variable) |>
   dplyr::summarise(
@@ -1492,19 +1595,19 @@ apicalis_vip <- model_parts(explainer = apicalis_explainer) |>
   dplyr::arrange(desc(`Mean drop-out loss`)) |>
   dplyr::rename(`Environmental variable` = variable)
 
-print(apicalis_vip)                                                             # print in console
-write.csv(apicalis_vip, file.path(apicalis_outdir, "apicalis_variable_importance_table.csv"),
+print(Osphranter_rufus_vip)                                                             # print in console
+write.csv(Osphranter_rufus_vip, file.path(Osphranter_rufus_outdir, "Osphranter_rufus_variable_importance_table.csv"),
           row.names = FALSE)                                                    # save CSV
-knitr::kable(apicalis_vip,
-             caption = "Variable importance summary (Leporillus apicalis ensemble model)",
+knitr::kable(Osphranter_rufus_vip,
+             caption = "Variable importance summary (Leporillus Osphranter_rufus ensemble model)",
              format = "markdown")                                               # show as table in Rmd
 
 # ---- Helper to compute & save PDPs for a single variable ----
 plot_and_save_pdp <- function(var, label){
-  pdp <- model_profile(apicalis_explainer, N = 500, variables = var)           # partial dependence
+  pdp <- model_profile(Osphranter_rufus_explainer, N = 500, variables = var)           # partial dependence
   p <- ggplot(pdp$agr_profiles, aes(x = `_x_`, y = `_yhat_`)) +
     geom_line(linewidth = 1) +
-    labs(title = paste("Leporillus apicalis – Partial dependence on", label),
+    labs(title = paste("Leporillus Osphranter_rufus – Partial dependence on", label),
          x = label, y = "Predicted suitability") +
     theme_minimal(base_size = 12) +
     theme(plot.background  = element_rect(fill = "white", color = NA),
@@ -1512,7 +1615,7 @@ plot_and_save_pdp <- function(var, label){
           panel.grid.major = element_line(color = "#C4C4C4", linewidth = 0.3),
           panel.border     = element_rect(color = "#C4C4C4", fill = NA, linewidth = 0.3),
           plot.title       = element_text(face = "italic", size = 13))
-  ggsave(file.path(apicalis_outdir, paste0("apicalis_pdp_", var, ".png")),
+  ggsave(file.path(Osphranter_rufus_outdir, paste0("Osphranter_rufus_pdp_", var, ".png")),
          p, width = 6, height = 4, dpi = 300, bg = "white")
   print(p)
 }

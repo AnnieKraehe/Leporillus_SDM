@@ -1,0 +1,4 @@
+"Environmental variable","Mean drop-out loss","SD"
+"bio12",0.277,0.019
+"bio06",0.251,0.012
+"bio05",0.237,0.016

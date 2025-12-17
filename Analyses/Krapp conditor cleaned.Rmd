@@ -25,7 +25,7 @@ packages <- c(
   "purrr", "readr", "recipes", "rnaturalearth", "rnaturalearthdata", "rsample",
   "rworldmap", "rworldxtra", "scales", "sf", "spatialsample", "terra", "tibble",
   "tidymodels", "tidysdm", "tidyterra", "tidyverse", "tidyr", "tune", "viridis",
-  "viridisLite", "workflowsets", "workflows", "yardstick"
+  "viridisLite", "workflowsets", "workflows", "yardstick", "ggnewscale"
 )
 
 # Install any missing packages (special cases for local/GitHub)
@@ -61,7 +61,7 @@ suppressPackageStartupMessages({                                                
   library(tidysdm); library(tidyterra); library(tidyverse)                        # SDM tools, terra geoms, tidyverse
   library(tidyr);   library(tune);     library(viridis)                           # reshape, tuning, palettes
   library(viridisLite); library(workflowsets); library(workflows)                 # palettes, model sets, workflows
-  library(yardstick)                                                              # metrics
+  library(yardstick)  ; library(ggnewscale)                                                            # metrics
 })
 ```
 
@@ -99,7 +99,7 @@ theme_map_clean <- theme_minimal(base_size = 12) +                              
 pastclim::download_dataset("Krapp2021")                                             # make sure climate dataset is available
 ```
 
-# Read *conditor* occurrences
+# Read conditor occurrences
 
 ```{r read-conditor}
 conditor <- readr::read_csv(file.path(processed_dir, "conditor.csv"),         # load occurrences
@@ -123,7 +123,7 @@ ggplot() +
   tidyterra::geom_spatraster(data = land_mask_current, aes()) +                     # draw land mask
   tidyterra::scale_fill_terrain_c() +                                               # simple palette
   geom_sf(data = conditor, aes(col = time_bp)) +                                    # plot points coloured by time
-  coord_sf(xlim = xlim, ylim = ylim)                                                # map window
+  coord_sf(xlim = xlim, ylim = ylim, expand = FALSE)                                                # map window
 ```
 
 # Climate time series (Krapp2021)
@@ -182,8 +182,6 @@ print(optimal_grid_res)
 
 
  ```
-
-
 # Pseudo-absence sampling in environmental space
 
 ```{r env-space-setup}
@@ -398,7 +396,7 @@ prediction_lgm <- predict_raster(conditor_ensemble, climate_lgm)                
 ggplot() +
   tidyterra::geom_spatraster(data = prediction_lgm, aes(fill = mean)) +
   tidyterra::scale_fill_terrain_c(name = "Probability\nof occurrence") +
-  coord_sf(xlim = xlim, ylim = ylim)
+  coord_sf(xlim = xlim, ylim = ylim, expand = FALSE)
 ```
 
 # Save model as SpatRaster stack
@@ -428,7 +426,7 @@ writeRaster(conditor_spatrast, filename = file.path(output_dir, "predictions_sta
 
 # Stack o' maps
 
-```{r stack-o-maps, dependson="globals"}
+ ```{r stack-o-maps, dependson="globals"}
 suppressPackageStartupMessages({ library(magick) })                                 # image post-processing
 stopifnot(exists("australia_outline"), exists("results_dir"),                       # guardrails
           exists("climate_full"), exists("conditor_ensemble"))
@@ -449,7 +447,7 @@ purrr::walk(760:800, function(timestep) {                                       
     tidyterra::geom_spatraster(data = prediction_raster, aes(fill = mean)) +
     tidyterra::scale_fill_terrain_c(name = "Probability\nof occurrence") +
     geom_sf(data = australia_outline, fill = NA, color = "grey20", linewidth = 0.3) +
-    coord_sf(xlim = xlim, ylim = ylim) +
+    coord_sf(xlim = xlim, ylim = ylim, expand = FALSE) +
     ggtitle(bquote(italic("Leporillus conditor") * " — Years BP: " * .(year_bp))) +
     theme_minimal() +
     theme(
@@ -471,7 +469,7 @@ purrr::walk(760:800, function(timestep) {                                       
 
 # 6-image panel (model only)
 
-```{r six-panel}
+ ```{r six-panel}
 raster_times  <- terra::time(conditor_spatrast)                                     # all BP times
 target_times  <- c(-40000, -26000, -21000, -12000, -6000, 0)                        # selected panels
 matched_idx   <- match(target_times, raster_times)                                   # index match
@@ -485,8 +483,8 @@ panel_plots <- pmap(
       tidyterra::geom_spatraster(data = current_prediction, aes(fill = mean)) +
       tidyterra::scale_fill_terrain_c(name = "Probability\nof occurrence", limits = c(0, 1)) +
       geom_sf(data = australia_outline, fill = NA, color = "grey20", linewidth = 0.3) +
-      coord_sf(xlim = xlim, ylim = ylim) +
-      scale_y_continuous(breaks = seq(-40, -10, by = 4)) +
+      coord_sf(xlim = xlim, ylim = ylim, expand = FALSE) +
+      scale_y_continuous(breaks = seq(-45, -10, by = 4)) +
       scale_x_continuous(breaks = seq(112, 150, by = 8)) +
       ggtitle(bquote("(" * .(tag_label) * ")  Years BP: " * .(year_bp))) +
       theme_minimal(base_size = 10) +
@@ -513,72 +511,12 @@ ggsave(file.path(results_dir, "conditor_model_panel.png"), final_panel,         
        width = 10, height = 9, dpi = 300)
 ```
 
-# Centroid through time & diff map (0 vs 20 ka)
 
-```{r centroid-diff, dependson="globals"}
-# Compute weighted centroids over time
-conditor_centroids <- lapply(1:nlyr(conditor_spatrast), function(i) {
-  r <- conditor_spatrast[[i]]
-  vals <- terra::values(r)[, 1]                                                     # suitability values
-  coords <- terra::crds(r, na.rm = FALSE)                                           # cell centroids
-  valid <- !is.na(vals) & vals > 0
-  if (!any(valid)) return(NULL)
-  w <- vals[valid]; cxy <- coords[valid, ]
-  data.frame(time_bp = time(conditor_spatrast)[i],
-             longitude = sum(cxy[,1] * w) / sum(w),
-             latitude  = sum(cxy[,2] * w) / sum(w))
-}) |>
-  dplyr::bind_rows()
-
-# Difference map: present minus 20 ka
-r_times <- as.numeric(terra::time(conditor_spatrast))
-idx_20  <- which.min(abs(r_times - (-20000)))
-idx_0   <- which.min(abs(r_times - 0))
-r_diff  <- conditor_spatrast[[idx_0]] - conditor_spatrast[[idx_20]]
-
-# Symmetric colour scale based on robust limits
-vals <- terra::values(r_diff, mat = FALSE)
-lims <- quantile(abs(vals), 0.98, na.rm = TRUE) |> as.numeric()
-lims <- max(0.1, min(1, lims))
-
-fill_scale <- scale_fill_gradient2(
-  name = "Change in suitability\nsince 20 ka",
-  low = "#3B4CC0", mid = "white", high = "#B40426",
-  midpoint = 0, limits = c(-lims, lims)
-)
-
-# Endpoints for legend markers
-pt_20 <- conditor_centroids[which.min(abs(conditor_centroids$time_bp + 20000)), , drop = FALSE]
-pt_0  <- conditor_centroids[which.min(abs(conditor_centroids$time_bp - 0)),       , drop = FALSE]
-
-# Plot single-panel diff + trajectory
-p_single <- ggplot() +
-  tidyterra::geom_spatraster(data = r_diff, aes(fill = mean)) +
-  fill_scale +
-  geom_sf(data = australia_outline, fill = NA, color = "grey20", linewidth = 0.4) +
-  coord_sf(xlim = xlim, ylim = ylim, expand = FALSE) +
-  geom_path(data = conditor_centroids, aes(longitude, latitude), color = "black", linewidth = 0.7, alpha = 0.85) +
-  geom_point(data = conditor_centroids, aes(longitude, latitude, color = time_bp), size = 2) +
-  geom_point(data = pt_20, aes(longitude, latitude, shape = "20 ka centroid"), size = 3, fill = "white", color = "black", stroke = 0.6) +
-  geom_point(data = pt_0,  aes(longitude, latitude, shape = "Present centroid"), size = 3, fill = "yellow", color = "black", stroke = 0.6) +
-  scale_color_viridis_c(name = "Years BP", option = "H",
-                        limits = c(-40000, 0), breaks = c(-40000, -30000, -20000, -10000, 0),
-                        labels = c("40 ka", "30 ka", "20 ka", "10 ka", "0")) +
-  scale_shape_manual(name = "Centroid positions", values = c("20 ka centroid" = 24, "Present centroid" = 21)) +
-  labs(x = "Longitude", y = "Latitude") +
-  theme_map_clean +
-  guides(fill = guide_colorbar(title.position = "top", order = 1),
-         color = guide_colorbar(title.position = "top", order = 2),
-         shape  = guide_legend(title.position  = "top", order = 3))
-
-ggsave(file.path(results_dir, "figure_range_shift_single.png"), p_single,          # save figure
-       width = 7.5, height = 6.5, dpi = 300, bg = "white")
-```
 
 # Middens validation prep
 
 ```{r middens-load}
-dated_middens <- read.csv(file.path(processed_dir, "datedmiddens.csv"))             # load midden metadata
+dated_middens <- read.csv(file.path(processed_dir, "dated_middens.csv"))             # load midden metadata
 
 middens_sf <- dated_middens |>                                                      # to sf, WGS84
   sf::st_as_sf(coords = c("longitude", "latitude"), crs = 4326) |>
@@ -651,7 +589,7 @@ walk(seq_along(raster_timesteps), function(i) {
     geom_sf(data = current_middens, shape = 21,
             fill = "#FF3399", color = "black",
             size = 2, stroke = 0.4) +
-    coord_sf(xlim = xlim, ylim = ylim) +
+    coord_sf(xlim = xlim, ylim = ylim, expand = FALSE) +
     ggtitle(bquote(italic("Leporillus conditor") *
                    " SDM with Middens — Years BP: " *
                    .(current_year_bp))) +
@@ -687,12 +625,12 @@ walk(seq_along(raster_timesteps), function(i) {
 ```
 # 6-panel with middens
 
-```{r six-panel-middens}
+ ```{r six-panel-middens}
 # Extract all raster timesteps
 raster_times <- terra::time(conditor_spatrast)
 
 # Target slices to display (Years BP)
-target_times <- c(-28000, -15000, -12000, -7000, -4000, 0)
+target_times <- c(-20000, -15000, -12000, -7000, -4000, 0)
 
 # Match targets to nearest raster indices
 matched_indices <- match(target_times, raster_times)
@@ -738,8 +676,8 @@ panel_plots <- pmap(
       ) +
       scale_color_manual(name = NULL, values = c("Midden" = "black")) +
       scale_shape_manual(name = NULL, values = c("Midden" = 21)) +
-      coord_sf(xlim = xlim, ylim = ylim) +
-      scale_y_continuous(breaks = seq(-40, -10, by = 4)) +
+      coord_sf(xlim = xlim, ylim = ylim, expand = FALSE) +
+      scale_y_continuous(breaks = seq(-45, -10, by = 4)) +
       scale_x_continuous(breaks = seq(112, 150, by = 8)) +
       ggtitle(
         bquote("(" * .(tag_label) * ")  Years BP: " * .(abs(year_bp)))
@@ -812,8 +750,11 @@ ggsave(
 # Threshold, pseudo-absences (time-aware), and evaluation
 
 ```{r tss-maxsss}
+
+set.seed(42)
+
 # ---- Bootstrap a starting threshold for time-aware pseudo-absences ----
-threshold_init <- 0.27                                                        # initial cut-off
+threshold_init <- 0.2                                                       # initial cut-off
 conditor_binary_init <- terra::app(x = conditor_spatrast, fun = \(i) i > threshold_init)  # binarise stack
 terra::time(conditor_binary_init) <- terra::time(conditor_spatrast) |> pastclim::ybp2date() # set dates
 conditor_rs_init <- terra::sds(conditor_binary_init); names(conditor_rs_init) <- "pres_abs" # wrap as sds
@@ -897,9 +838,15 @@ pres_abs_observed <- pseudoabs |>
   dplyr::select(-class, -time_step) |>
   tibble::rowid_to_column("name")                                             # ensure row id
 
-pres_abs_pred <- location_slice_from_region_series(                           # extract model class
-  x = pres_abs_observed, region_series = conditor_rs
+pres_abs_pred <- location_slice_from_region_series(
+  x            = pres_abs_observed,
+  region_series = conditor_rs,
+  coords       = c("longitude", "latitude"),
+  nn_interpol  = FALSE,   # <- turn OFF neighbour interpolation
+  buffer       = FALSE
 )
+
+
 pres_abs_pred$class <- pseudoabs$class                                        # add true class
 
 # Confusion components
@@ -920,172 +867,663 @@ cat(sprintf("Sorensen: %.3f\n", sorensen))
 cat(sprintf("F2 score: %.3f\n", f2score))
 ```
 
-# Panels (a) & (b): histograms (full vs coarse) and persistence
+#fixed threshold = 0.24 ----
+```{r}
+set.seed(42)
+fixed_threshold <- 0.24
+
+# predicted_values and observed should already exist from earlier:
+#   predicted_values <- c(presence_vals, pseudoabs_vals)
+#   observed         <- c(rep(1, length(presence_vals)),
+#                         rep(0, length(pseudoabs_vals)))
+
+stopifnot(exists("predicted_values"), exists("observed"))
+
+# Binary predictions at fixed threshold
+pred_binary <- ifelse(predicted_values > fixed_threshold, 1L, 0L)
+
+# Confusion matrix components
+a <- sum(pred_binary == 1L & observed == 1L)  # TP
+b <- sum(pred_binary == 1L & observed == 0L)  # FP
+c <- sum(pred_binary == 0L & observed == 1L)  # FN
+d <- sum(pred_binary == 0L & observed == 0L)  # TN
+
+# Guard against degenerate cases
+if ((a + c) == 0L || (b + d) == 0L || (a + b) == 0L) {
+  warning("Degenerate confusion matrix for threshold = ", fixed_threshold)
+} else {
+  tpr <- a / (a + c)                        # sensitivity
+  tnr <- d / (b + d)                        # specificity
+  tss <- tpr + tnr - 1                      # TSS
+
+  sorensen  <- 2 * (a / (c + (2 * a) + d))  # Sørensen
+  precision <- a / (a + b)                  # precision
+  f2score   <- 2 * ((precision * tpr) / (precision + tpr))  # F2
+
+  cat(sprintf("Threshold (fixed): %.2f\n", fixed_threshold))
+  cat(sprintf("True Skill Statistic: %.3f\n", tss))
+  cat(sprintf("Sorensen: %.3f\n",        sorensen))
+  cat(sprintf("F2 score: %.3f\n",        f2score))
+}
+```
+```{r conditor-eval-1deg}
+
+stopifnot(exists("conditor_spatrast"))
+
+# Current resolution
+cur_res <- terra::res(conditor_spatrast)
+message("Original conditor_spatrast resolution (degrees):")
+print(cur_res)
+
+# Work on a copy so we never touch the original stack
+conditor_spatrast_eval <- conditor_spatrast
+
+# If resolution is ~0.5° x 0.5°, aggregate to ~1°; otherwise leave as-is
+if (all(abs(as.numeric(cur_res) - c(0.5, 0.5)) < 1e-6)) {
+  message("Aggregating conditor_spatrast to ~1° for evaluation only...")
+  
+  # Store numeric BP times BEFORE aggregation
+  rt_bp <- as.numeric(terra::time(conditor_spatrast_eval))
+  
+  conditor_spatrast_eval <- terra::aggregate(
+    x    = conditor_spatrast_eval,
+    fact = 2,
+    fun  = "mean",
+    na.rm = TRUE
+  )
+  
+  # Re-attach numeric BP times
+  terra::time(conditor_spatrast_eval) <- rt_bp
+  
+} else {
+  message("Resolution is not 0.5° – skipping aggregation. Using existing resolution for evaluation.")
+}
+
+message("Evaluation stack resolution (degrees):")
+print(terra::res(conditor_spatrast_eval))
+```
+
+# 1 degree Threshold, pseudo-absences (time-aware), and evaluation
+
+```{r 1 degree tss-maxsss}
+
+set.seed(42)
+stopifnot(exists("conditor_spatrast_eval"), exists("dated_middens"))
+
+# ---- Time vector in years BP (numeric) ----
+rt_bp <- as.numeric(terra::time(conditor_spatrast_eval))
+if (!is.numeric(rt_bp)) {
+  stop("terra::time(conditor_spatrast_eval) must be numeric years BP before calling pastclim::ybp2date().")
+}
+
+# ---- Bootstrap a starting threshold for time-aware pseudo-absences ----
+threshold_init <- 0.27                                        # initial cut-off
+
+conditor_binary_init <- terra::app(
+  x   = conditor_spatrast_eval,
+  fun = \(i) i > threshold_init
+)
+
+# Set dates on the binary stack (needed by sample_pseudoabs_time)
+terra::time(conditor_binary_init) <- pastclim::ybp2date(rt_bp)
+
+conditor_rs_init <- terra::sds(conditor_binary_init)
+names(conditor_rs_init) <- "pres_abs"
+
+# ---- Sample pseudo-absences with temporal & spatial rules ----
+pseudoabs_init <- sample_pseudoabs_time(
+  data            = dated_middens,                 # dated midden points
+  raster          = conditor_rs_init,              # binary model through time (1° here)
+  n_per_presence  = 3,                             # 3 PAs per presence
+  time_col        = "time_bp",                     # input time column (BP)
+  lubridate_fun   = pastclim::ybp2date,            # BP -> calendar date for matching
+  method          = c("dist_min", km2m(200)),      # min distance in space
+  time_buffer     = 365000 * 2                     # ±2 ka temporal buffer (days)
+)
+
+# ---- Extract continuous predictions matched to each row’s nearest timestep ----
+rt <- rt_bp                                        # model time grid (BP) for nearest-time matching
+
+# Presence values (match each midden to nearest model time slice)
+presence_sf <- sf::st_as_sf(
+  dated_middens,
+  coords = c("longitude", "latitude"),
+  crs    = 4326
+) |>
+  sf::st_transform(crs(conditor_spatrast_eval)) |>
+  dplyr::mutate(
+    nearest_time = sapply(time_bp, function(x) rt[which.min(abs(rt - x))]),
+    nearest_idx  = match(nearest_time, rt)
+  )
+
+pres_mat <- terra::extract(conditor_spatrast_eval, terra::vect(presence_sf), ID = FALSE)
+presence_vals <- as.matrix(pres_mat)[cbind(seq_len(nrow(presence_sf)), presence_sf$nearest_idx)]
+
+# Pseudo-absence values (same time-matching as above)
+pseudoabs_sf <- sf::st_as_sf(
+  pseudoabs_init,
+  coords = c("longitude", "latitude"),
+  crs    = 4326
+) |>
+  sf::st_transform(crs(conditor_spatrast_eval)) |>
+  dplyr::mutate(
+    time_bp      = pastclim::date2ybp(time_step),  # convert back to BP
+    nearest_time = sapply(time_bp, function(x) rt[which.min(abs(rt - x))]),
+    nearest_idx  = match(nearest_time, rt)
+  )
+
+pseudo_mat <- terra::extract(conditor_spatrast_eval, terra::vect(pseudoabs_sf), ID = FALSE)
+pseudoabs_vals <- as.matrix(pseudo_mat)[cbind(seq_len(nrow(pseudoabs_sf)), pseudoabs_sf$nearest_idx)]
+
+# ---- Grid search for the MaxSSS threshold (using TSS = sens + spec - 1) ----
+predicted_values <- c(presence_vals, pseudoabs_vals)                       # all scores
+observed         <- c(rep(1, length(presence_vals)),
+                      rep(0, length(pseudoabs_vals)))                      # labels
+
+keep <- is.finite(predicted_values) & is.finite(observed)                  # guard against NA/Inf
+predicted_values <- predicted_values[keep]
+observed         <- observed[keep]
+
+thresholds <- seq(0, 1, by = 0.01)
+results   <- data.frame(threshold = thresholds, TSS = NA_real_)
+
+for (i in seq_along(thresholds)) {
+  thr         <- thresholds[i]
+  pred_binary <- ifelse(predicted_values > thr, 1L, 0L)
+  a <- sum(pred_binary == 1L & observed == 1L)  # TP
+  b <- sum(pred_binary == 1L & observed == 0L)  # FP
+  c <- sum(pred_binary == 0L & observed == 1L)  # FN
+  d <- sum(pred_binary == 0L & observed == 0L)  # TN
+  if ((a + c) == 0 || (b + d) == 0) next
+  sens <- a / (a + c)
+  spec <- d / (b + d)
+  results$TSS[i] <- sens + spec - 1
+}
+
+opt_threshold <- results$threshold[which.max(results$TSS)]
+cat("Optimal Threshold (maxSSS) at 1°:", opt_threshold, "\n")
+
+# ---- Rebuild binary stack at optimal threshold (1° eval stack) ----
+conditor_binary <- terra::app(
+  x   = conditor_spatrast_eval,
+  fun = \(i) i > opt_threshold
+)
+terra::time(conditor_binary) <- pastclim::ybp2date(rt_bp)
+
+conditor_rs <- terra::sds(conditor_binary)
+names(conditor_rs) <- "pres_abs"
+
+# ---- Resample pseudo-absences with final thresholded stack ----
+pseudoabs <- sample_pseudoabs_time(
+  data            = dated_middens,
+  raster          = conditor_rs,
+  n_per_presence  = 3,
+  time_col        = "time_bp",
+  lubridate_fun   = pastclim::ybp2date,
+  method          = c("dist_min", km2m(200)),
+  time_buffer     = 365000 * 2
+)
+
+# ---- Compute evaluation metrics (TSS, Sørensen, F2) ----
+pres_abs_observed <- pseudoabs |>
+  dplyr::mutate(time_bp = pastclim::date2ybp(time_step)) |>
+  dplyr::select(-class, -time_step) |>
+  tibble::rowid_to_column("name")
+
+pres_abs_pred <- location_slice_from_region_series(
+  x            = pres_abs_observed,
+  region_series = conditor_rs,
+  coords       = c("longitude", "latitude"),
+  nn_interpol  = FALSE,   # <- turn OFF neighbour interpolation
+  buffer       = FALSE
+)
+
+
+pres_abs_pred$class <- pseudoabs$class
+
+a <- nrow(dplyr::filter(pres_abs_pred, class == "presence",  pres_abs == 1))  # TP
+b <- nrow(dplyr::filter(pres_abs_pred, class == "pseudoabs", pres_abs == 1))  # FP
+c <- nrow(dplyr::filter(pres_abs_pred, class == "presence",  pres_abs == 0))  # FN
+d <- nrow(dplyr::filter(pres_abs_pred, class == "pseudoabs", pres_abs == 0))  # TN
+
+tpr      <- a / (a + c)
+tnr      <- d / (b + d)
+tss      <- tpr + tnr - 1
+sorensen <- 2 * (a / (c + (2 * a) + d))
+precision <- a / (a + b)
+f2score   <- 2 * ((precision * tpr) / (precision + tpr))
+
+cat(sprintf("True Skill Statistic (1°): %.3f\n", tss))
+cat(sprintf("Sorensen (1°): %.3f\n",        sorensen))
+cat(sprintf("F2 score (1°): %.3f\n",        f2score))
+```
+
+#fixed threshold
+```{r tss-fixed-1deg}
+
+set.seed(42)
+fixed_threshold <- 0.24
+
+# These should come from the previous 1° evaluation chunk
+stopifnot(exists("predicted_values"), exists("observed"))
+
+# Binary predictions at fixed threshold
+pred_binary <- ifelse(predicted_values > fixed_threshold, 1L, 0L)
+
+# Confusion matrix components
+a <- sum(pred_binary == 1L & observed == 1L)  # TP
+b <- sum(pred_binary == 1L & observed == 0L)  # FP
+c <- sum(pred_binary == 0L & observed == 1L)  # FN
+d <- sum(pred_binary == 0L & observed == 0L)  # TN
+
+# Guard against degenerate cases
+if ((a + c) == 0L || (b + d) == 0L || (a + b) == 0L) {
+  warning("Degenerate confusion matrix for threshold = ", fixed_threshold)
+} else {
+  tpr <- a / (a + c)                       # sensitivity
+  tnr <- d / (b + d)                       # specificity
+  tss <- tpr + tnr - 1                     # TSS
+
+  sorensen  <- 2 * (a / (c + (2 * a) + d)) # Sørensen (same formula as before)
+  precision <- a / (a + b)                 # precision
+  f2score   <- 2 * ((precision * tpr) / (precision + tpr))  # F2 (β = 2)
+
+  cat(sprintf("Threshold (fixed, 1°): %.2f\n", fixed_threshold))
+  cat(sprintf("True Skill Statistic (1°): %.3f\n", tss))
+  cat(sprintf("Sorensen (1°): %.3f\n",        sorensen))
+  cat(sprintf("F2 score (1°): %.3f\n",        f2score))
+}
+
+```
+
+
+# Centroid through time & diff map (0 vs 20 ka)
+
+```{r centroid-diff, dependson="globals"}
+
+# --- Output directory ---
+out_dir <- "C:/github/SNR_SDM/Results/stratified environmental sampling/conditor"
+dir.create(out_dir, recursive = TRUE, showWarnings = FALSE)
+
+suppressPackageStartupMessages({ library(ggnewscale) })
+
+# ─────────────────────────────────────────────────────────
+# 1) Suitability-weighted centroids through time
+# ─────────────────────────────────────────────────────────
+conditor_centroids <- lapply(seq_len(nlyr(conditor_spatrast)), function(i) {
+  r      <- conditor_spatrast[[i]]
+  vals   <- terra::values(r)[,1]
+  coords <- terra::crds(r, na.rm = FALSE)
+  valid  <- is.finite(vals) & vals > 0
+
+  if (!any(valid)) return(NULL)
+
+  w  <- vals[valid]
+  xy <- coords[valid,]
+
+  data.frame(
+    time_bp   = terra::time(conditor_spatrast)[i],
+    longitude = weighted.mean(xy[,1], w),
+    latitude  = weighted.mean(xy[,2], w)
+  )
+}) |> dplyr::bind_rows()
+
+# Identify the 0 ka and 20 ka layers
+r_times <- as.numeric(terra::time(conditor_spatrast))
+idx_0   <- which.min(abs(r_times - 0))
+idx_21  <- which.min(abs(r_times + 20000))
+
+pt_0  <- conditor_centroids[which.min(abs(conditor_centroids$time_bp - 0)), , drop = FALSE]
+pt_20 <- conditor_centroids[which.min(abs(conditor_centroids$time_bp + 20000)), , drop = FALSE]
+
+# ─────────────────────────────────────────────────────────
+# 2) Difference raster (0 ka − 20 ka) masked to Australia
+# ─────────────────────────────────────────────────────────
+r_diff <- conditor_spatrast[[idx_0]] - conditor_spatrast[[idx_20]]
+names(r_diff) <- "diff"
+
+r_diff <- terra::mask(r_diff, terra::vect(australia_outline))
+df_diff <- as.data.frame(r_diff, xy = TRUE, na.rm = FALSE)
+
+# diff colour scale limits
+lims <- quantile(abs(df_diff$diff), 0.98, na.rm = TRUE) |> as.numeric()
+lims <- max(lims, 0.1)
+
+diff_fill_scale <- scale_fill_gradient2(
+  name     = "Change in suitability\nsince 20 ka",
+  low      = "#ff7800",
+  mid      = "white",
+  high     = "#6112c2",
+  midpoint = 0,
+  limits   = c(-lims, lims),
+  na.value = "transparent"
+)
+
+# ─────────────────────────────────────────────────────────
+# 3) Dated middens (±500 yr)
+# ─────────────────────────────────────────────────────────
+middens_sf <- middens_sf |> dplyr::mutate(time_bp = as.numeric(time_bp))
+
+m_0  <- middens_sf |> dplyr::filter(abs(time_bp - 0) <= 500) |> dplyr::mutate(when = "0 ka")
+m_20 <- middens_sf |> dplyr::filter(abs(time_bp + 20000) <= 500) |> dplyr::mutate(when = "20 ka")
+
+m_plot <- dplyr::bind_rows(m_20, m_0) |>
+  dplyr::mutate(when = factor(when, levels = c("20 ka", "0 ka")))
+
+# extract coords → convert to df for solid geom_point()
+coords <- sf::st_coordinates(m_plot)
+
+m_plot_df <- m_plot |>
+  dplyr::mutate(
+    longitude = coords[,1],
+    latitude  = coords[,2]
+  ) |>
+  sf::st_drop_geometry()
+
+# ─────────────────────────────────────────────────────────
+# 4) Plot
+# ─────────────────────────────────────────────────────────
+p_single <- ggplot() +
+
+  # diff raster
+  geom_raster(data = df_diff, aes(x = x, y = y, fill = diff)) +
+  diff_fill_scale +
+geom_sf(data = australia_outline, fill = NA, colour = "grey20", linewidth = 0.4) +
+coord_sf(
+  xlim   = c(110, 155),   # longitude: 110–155°E
+  ylim   = c(-45, -10),   # latitude: 45–10°S
+  expand = FALSE
+) +
+
+  # centroid trajectory
+  geom_path(
+    data = conditor_centroids,
+    aes(longitude, latitude),
+    colour = "black", linewidth = 0.7, alpha = 0.85
+  ) +
+  geom_point(
+    data = conditor_centroids,
+    aes(longitude, latitude, colour = time_bp),
+    size = 2
+  ) +
+  geom_point(
+    data = pt_20,
+    aes(longitude, latitude, shape = "20 ka centroid"),
+    size = 3, fill = "white", colour = "black", stroke = 0.6
+  ) +
+  geom_point(
+    data = pt_0,
+    aes(longitude, latitude, shape = "Present centroid"),
+    size = 3, fill = "yellow", colour = "black", stroke = 0.6
+  ) +
+
+  scale_color_viridis_c(
+    name = "Centroid Years BP",
+    option = "H",
+    limits = c(-40000, 0),
+    breaks = c(-40000, -30000, -20000, -10000, 0),
+    labels = c("40 ka", "30 ka", "20 ka", "10 ka", "0")
+  ) +
+  scale_shape_manual(
+    name   = "Centroids",
+    values = c("20 ka centroid" = 24,
+               "Present centroid" = 21)
+  ) +
+
+  # reset colour + shape for middens
+ggnewscale::new_scale_fill() +    # reset fill scale
+ggnewscale::new_scale_color() +   # reset colour scale
+ggnewscale::new_scale("shape") +  # reset shape scale
+
+
+  geom_point(
+    data = m_plot_df,
+    aes(x = longitude, y = latitude, fill = when, shape = when),
+    colour = "black",
+    size = 2.7,
+    stroke = 0.4
+  ) +
+  scale_fill_manual(
+    name = "Dated middens",
+    values = c("20 ka" = "#E65100",
+               "0 ka"  = "#7C4DFF")
+  ) +
+  scale_shape_manual(
+    name = "Dated middens",
+    values = c("20 ka" = 24,
+               "0 ka"  = 21)
+  ) +
+
+  labs(x = "Longitude", y = "Latitude") +
+  theme_map_clean +
+  guides(
+    fill   = guide_colorbar(title.position = "top", order = 1),
+    colour = guide_colorbar(title.position = "top", order = 2),
+    shape  = guide_legend(title.position  = "top", order = 3)
+  )
+theme(
+  legend.position = "bottom",
+  legend.box = "vertical"
+)
+
+# ─────────────────────────────────────────────────────────
+# 5) Save + show
+# ─────────────────────────────────────────────────────────
+ggsave(
+  file.path(out_dir, "conditor_figure_range_shift_0_vs_20ka_with_middens.png"),
+  p_single, width = 7.5, height = 6.5, dpi = 300, bg = "white"
+)
+saveRDS(p_single, file.path(out_dir, "conditor_figure_range_shift_single_20ka.rds"))
+
+p_single
+
+
+```
+
+
+
+
+# Histograms
 
 ```{r hist-panels}
-suppressPackageStartupMessages({ library(cowplot) })                           # for panel labelling
-stopifnot(inherits(conditor_spatrast, "SpatRaster"),
-          inherits(middens_sf, "sf"),
-          dir.exists(results_dir))                                             # sanity checks
+# =====================================================
+# PANEL (a): Habitat suitability at dated midden locations
+# =====================================================
 
-# ---- Figure parameters & thresholds ----
-step_years <- 1000                                                             # temporal step (years)
-rt <- as.numeric(terra::time(conditor_spatrast))                               # BP vector
-thr_a <- if (exists("opt_threshold")) opt_threshold else 0.27                  # vertical line on hist
-thr_b <- 0.35                                                                  # persistence threshold
-lookback_ka <- 30                                                              # look back 30 ka
-include_current <- TRUE                                                        # count current slice
-coarse_factor <- 2                                                             # 2x coarser than base
-w_single <- 7; h_single <- 5; dpi_out <- 300                                   # output size
+# ----- Fixed y-axis for all histograms -----
+y_max_hist    <- 85
+y_breaks_hist <- seq(0, 80, by = 20)
 
-# ---- Useful helpers ----
-res_full_deg   <- terra::res(conditor_spatrast)[1]                             # native res (deg)
-res_coarse_deg <- res_full_deg * coarse_factor                                 # coarse res (deg)
-
-ensure_time_cols <- function(m_sf, rt) {                                       # ensure binned time cols
-  if (!all(c("binned_time_bp","nearest_idx") %in% names(m_sf))) {
-    m_sf <- m_sf %>% dplyr::mutate(
-      binned_time_bp = sapply(time_bp, function(x) rt[which.min(abs(rt - x))]),
-      nearest_idx    = match(binned_time_bp, rt)
-    )
-  }
-  m_sf
-}
-
-fd_bin_count <- function(x) {                                                  # Freedman–Diaconis-ish bins
-  x <- x[is.finite(x)]; if (!length(x)) return(30L)
-  fd_bw <- 2 * IQR(x, na.rm = TRUE) / (length(x)^(1/3))
-  max(20, min(60, round(1 / max(min(fd_bw, 0.08), 0.02))))
-}
-
-time_matched_background <- function(m_sf, rast){                               # background matched in time
-  rt <- as.numeric(terra::time(rast))
-  m_sf <- ensure_time_cols(m_sf, rt)
-  split(m_sf, m_sf$binned_time_bp) |>
-    lapply(function(df_i){
-      tb  <- unique(df_i$binned_time_bp)
-      lyr <- match(tb, rt)
-      n_i <- nrow(df_i)
-      vals <- terra::spatSample(rast[[lyr]], size = n_i, method = "random", values = TRUE, na.rm = TRUE)[,1] |> as.numeric()
-      tibble::tibble(suitability = vals, group = "Background (time-matched)", bin = tb)
-    }) |>
-    dplyr::bind_rows()
-}
-
-compute_persistence_strict <- function(rast, m_sf, thr, include_current, lookback_ka, step_years){
-  rt <- as.numeric(terra::time(rast))
-  m_sf <- ensure_time_cols(m_sf, rt)
-  mat <- terra::extract(rast, terra::vect(m_sf), ID = FALSE) |> as.matrix()    # suitability time series
-  lookback_steps <- if (is.finite(lookback_ka)) as.integer(lookback_ka) else Inf
-  start_idx <- if (!include_current) pmax(m_sf$nearest_idx - 1L, 0L) else m_sf$nearest_idx
-  lead_true_count <- function(x){ n <- 0L; for (v in x) { if (isTRUE(v)) n <- n + 1L else break }; n }
-  steps <- vapply(seq_len(nrow(mat)), function(i){
-    idx <- start_idx[i]; if (idx <= 0L) return(0L)
-    from <- idx; to <- if (is.finite(lookback_steps)) max(idx - lookback_steps + 1L, 1L) else 1L
-    sidx <- seq(from, to, by = -1L)                                            # walk backwards in time
-    above <- mat[i, sidx] > thr
-    lead_true_count(above)                                                     # consecutive TRUEs
-  }, integer(1))
-  tibble::tibble(persist_ka = steps * (step_years/1000))                       # convert to ka
-}
-
-# ---- Prepare data at native resolution ----
-middens_sf <- ensure_time_cols(middens_sf, rt)
-mid_df_full <- tibble::tibble(
-  suitability = sf::st_drop_geometry(middens_sf)$predicted,                    # midden scores
-  group = "Middens",
-  bin = middens_sf$binned_time_bp
+fixed_y_scale <- scale_y_continuous(
+  name   = "Count",
+  limits = c(0, y_max_hist),
+  breaks = y_breaks_hist,
+  expand = expansion(mult = c(0, 0.02))
 )
-bg_df_full  <- time_matched_background(middens_sf, conditor_spatrast)          # matched background
-plot_df_full <- dplyr::bind_rows(mid_df_full, bg_df_full) |>
-  dplyr::filter(is.finite(suitability))
+
+# =====================================================
+# --- Full resolution ---
+# =====================================================
+mid_df_full <- tibble(
+  suitability = sf::st_drop_geometry(middens_sf)$predicted,
+  group       = "Middens",
+  bin         = middens_sf$binned_time_bp
+)
+
+bg_df_full <- time_matched_background(middens_sf, conditor_spatrast)
+
+plot_df_full <- bind_rows(mid_df_full, bg_df_full) |>
+  filter(is.finite(suitability))
+
 bins_a_full <- fd_bin_count(mid_df_full$suitability)
 
-# ---- Histogram (native resolution) ----
 p_a_full <- ggplot(plot_df_full, aes(x = suitability, fill = group)) +
-  geom_histogram(position = "identity", alpha = 0.65, bins = bins_a_full, boundary = 0, color = "white") +
+  geom_histogram(
+    position = "identity",
+    alpha    = 0.65,
+    bins     = bins_a_full,
+    boundary = 0,
+    colour   = "white"
+  ) +
   geom_vline(xintercept = thr_a, linetype = "dashed", linewidth = 0.6) +
-  scale_fill_manual(values = c("Middens" = "#BC43FF", "Background (time-matched)" = "#9AA0A6")) +
+  scale_fill_manual(values = c(
+    "Middens"                 = "#BC43FF",
+    "Background (time-matched)" = "#9AA0A6"
+  )) +
   scale_x_continuous(limits = c(0,1), breaks = seq(0,1,0.1)) +
-  labs(title = sprintf("Habitat suitability at dated midden locations (%.1f°)", terra::res(conditor_spatrast)[1]),
-       x = "Modelled suitability (0–1)", y = "Count", fill = NULL) +
+  fixed_y_scale +
+  labs(
+    title = sprintf("Habitat suitability at dated midden locations (%.1f°)", res_full_deg),
+    x     = "Modelled suitability (0–1)",
+    fill  = NULL
+  ) +
   theme_minimal(base_size = 12) +
-  theme(plot.background = element_rect(fill = "white", color = NA),
-        panel.background = element_rect(fill = "#F2F2F2", color = NA),
-        panel.grid.major = element_line(color = "white"),
-        legend.position = "bottom")
-ggsave(file.path(results_dir, "panel_a_full_hist.png"), p_a_full, width = w_single, height = h_single, dpi = dpi_out, bg = "white")
+  theme(
+    plot.background  = element_rect(fill = "white", colour = NA),
+    panel.background = element_rect(fill = "#F2F2F2", colour = NA),
+    panel.grid.major = element_line(colour = "white"),
+    legend.position  = "bottom"
+  )
 
-# ---- Build coarse version (2× cell size) and repeat ----
-conditor_spatrast_coarse <- terra::aggregate(conditor_spatrast, fact = coarse_factor, fun = mean, na.rm = TRUE)
-terra::time(conditor_spatrast_coarse) <- terra::time(conditor_spatrast)        # keep time vector
+print(p_a_full)
+ggsave(
+  file.path(results_dir, "conditor_panel_a_full_hist.png"),
+  p_a_full, width = w_single, height = h_single, dpi = dpi_out, bg = "white"
+)
 
-mid_vals_c <- terra::extract(conditor_spatrast_coarse, terra::vect(middens_sf), ID = FALSE) |> as.matrix()
+# =====================================================
+# --- Coarse resolution ---
+# =====================================================
+mid_vals_c <- terra::extract(
+  conditor_spatrast_eval,
+  terra::vect(middens_sf),
+  ID = FALSE
+) |> as.matrix()
+
 pick_idx   <- cbind(seq_len(nrow(mid_vals_c)), middens_sf$nearest_idx)
 mid_suit_c <- mid_vals_c[pick_idx] |> as.numeric()
-mid_df_c <- tibble::tibble(suitability = mid_suit_c, group = "Middens", bin = middens_sf$binned_time_bp)
-bg_df_c  <- time_matched_background(middens_sf, conditor_spatrast_coarse)
-plot_df_c <- dplyr::bind_rows(mid_df_c, bg_df_c) |> dplyr::filter(is.finite(suitability))
-bins_a_c  <- fd_bin_count(mid_df_c$suitability)
+
+mid_df_c <- tibble(
+  suitability = mid_suit_c,
+  group       = "Middens",
+  bin         = middens_sf$binned_time_bp
+)
+
+bg_df_c <- time_matched_background(middens_sf, conditor_spatrast_eval)
+
+plot_df_c <- bind_rows(mid_df_c, bg_df_c) |>
+  filter(is.finite(suitability))
+
+bins_a_c <- fd_bin_count(mid_df_c$suitability)
 
 p_a_coarse <- ggplot(plot_df_c, aes(x = suitability, fill = group)) +
-  geom_histogram(position = "identity", alpha = 0.65, bins = bins_a_c, boundary = 0, color = "white") +
+  geom_histogram(
+    position = "identity",
+    alpha    = 0.65,
+    bins     = bins_a_c,
+    boundary = 0,
+    colour   = "white"
+  ) +
   geom_vline(xintercept = thr_a, linetype = "dashed", linewidth = 0.6) +
-  scale_fill_manual(values = c("Middens" = "#BC43FF", "Background (time-matched)" = "#9AA0A6")) +
+  scale_fill_manual(values = c(
+    "Middens"                 = "#BC43FF",
+    "Background (time-matched)" = "#9AA0A6"
+  )) +
   scale_x_continuous(limits = c(0,1), breaks = seq(0,1,0.1)) +
-  labs(title = sprintf("Habitat suitability at dated midden locations (%.1f°)", terra::res(conditor_spatrast_coarse)[1]),
-       x = "Modelled suitability (0–1)", y = "Count", fill = NULL) +
+  fixed_y_scale +
+  labs(
+    title = sprintf("(b) Habitat suitability at dated midden locations (%.1f°)", res_coarse_deg),
+    x     = "Modelled suitability (0–1)",
+    fill  = NULL
+  ) +
   theme_minimal(base_size = 12) +
-  theme(plot.background = element_rect(fill = "white", color = NA),
-        panel.background = element_rect(fill = "#F2F2F2", color = NA),
-        panel.grid.major = element_line(color = "white"),
-        legend.position = "bottom")
-ggsave(file.path(results_dir, "panel_a_coarse_hist.png"), p_a_coarse, width = w_single, height = h_single, dpi = dpi_out, bg = "white")
+  theme(
+    plot.background  = element_rect(fill = "white", colour = NA),
+    panel.background = element_rect(fill = "#F2F2F2", colour = NA),
+    panel.grid.major = element_line(colour = "white"),
+    legend.position  = "bottom"
+  )
 
-# ---- Persistence histograms (strict consecutive suitability) ----
-persist_full <- compute_persistence_strict(conditor_spatrast, middens_sf, thr = thr_b, include_current = include_current, lookback_ka = lookback_ka, step_years = step_years)
+print(p_a_coarse)
+ggsave(
+  file.path(results_dir, "conditor_panel_a_coarse_hist.png"),
+  p_a_coarse, width = w_single, height = h_single, dpi = dpi_out, bg = "white"
+)
+
+```
+```{r}
+# =====================================================
+# PANEL (b): Duration of suitability prior to midden deposition
+# =====================================================
+# --- Full resolution ---
+persist_full <- compute_persistence_strict(
+  rast = conditor_spatrast, m_sf = middens_sf, thr = thr_b,
+  include_current = include_current, lookback_ka = lookback_ka, step_years = step_years
+)
 x_max_b <- if (is.finite(lookback_ka)) lookback_ka else max(persist_full$persist_ka, na.rm = TRUE)
 
 p_b_full <- ggplot(persist_full, aes(x = persist_ka)) +
-  geom_histogram(binwidth = 1, boundary = 0, closed = "left", color = "white", fill = "#BC43FF", alpha = 0.9) +
-  scale_x_continuous(limits = c(0, x_max_b), breaks = seq(0, x_max_b, by = 10), labels = function(x) paste0(x, " ka")) +
-  labs(title = sprintf("Duration of suitability prior to midden deposition (%.1f°)", terra::res(conditor_spatrast)[1]),
-       x = sprintf("Years suitable before deposition (ka; suitability \u2265 %.2f)", thr_b), y = "Count") +
+  geom_histogram(binwidth = 1, boundary = 0, closed = "left",
+                 colour = "white", fill = "#BC43FF", alpha = 0.9) +
+  scale_x_continuous(limits = c(0, x_max_b),
+                     breaks = seq(0, x_max_b, by = 10),
+                     labels = function(x) paste0(x, " ka")) +
+  labs(title = sprintf("Duration of suitability prior to midden deposition (%.1f°)", res_full_deg),
+       x = sprintf("Years suitable before deposition (ka; suitability \u2265 %.2f)", thr_b),
+       y = "Count") +
   theme_minimal(base_size = 12) +
-  theme(plot.background = element_rect(fill = "white", color = NA),
-        panel.background = element_rect(fill = "#F2F2F2", color = NA),
-        panel.grid.major = element_line(color = "white"))
-ggsave(file.path(results_dir, "panel_b_full_hist_thr035.png"), p_b_full, width = w_single, height = h_single, dpi = dpi_out, bg = "white")
+  theme(plot.background = element_rect(fill = "white", colour = NA),
+        panel.background = element_rect(fill = "#F2F2F2", colour = NA),
+        panel.grid.major = element_line(colour = "white"))
 
-persist_coarse <- compute_persistence_strict(conditor_spatrast_coarse, middens_sf, thr = thr_b, include_current = include_current, lookback_ka = lookback_ka, step_years = step_years)
+print(p_b_full)
+ggsave(file.path(results_dir, "conditor_panel_b_full_hist_thr035.png"), p_b_full,
+       width = w_single, height = h_single, dpi = dpi_out, bg = "white")
+
+# --- Coarse resolution ---
+persist_coarse <- compute_persistence_strict(
+  rast = conditor_spatrast_eval, m_sf = middens_sf, thr = thr_b,
+  include_current = include_current, lookback_ka = lookback_ka, step_years = step_years
+)
 
 p_b_coarse <- ggplot(persist_coarse, aes(x = persist_ka)) +
-  geom_histogram(binwidth = 1, boundary = 0, closed = "left", color = "white", fill = "#BC43FF", alpha = 0.9) +
-  scale_x_continuous(limits = c(0, x_max_b), breaks = seq(0, x_max_b, by = 10), labels = function(x) paste0(x, " ka")) +
-  labs(title = sprintf("Duration of suitability prior to midden deposition (%.1f°)", terra::res(conditor_spatrast_coarse)[1]),
-       x = sprintf("Years suitable before deposition (ka; suitability \u2265 %.2f)", thr_b), y = "Count") +
+  geom_histogram(binwidth = 1, boundary = 0, closed = "left",
+                 colour = "white", fill = "#BC43FF", alpha = 0.9) +
+  scale_x_continuous(limits = c(0, x_max_b),
+                     breaks = seq(0, x_max_b, by = 10),
+                     labels = function(x) paste0(x, " ka")) +
+  labs(title = sprintf("Duration of suitability prior to midden deposition (%.1f°)", res_coarse_deg),
+       x = sprintf("Years suitable before deposition (ka; suitability \u2265 %.2f)", thr_b),
+       y = "Count") +
   theme_minimal(base_size = 12) +
-  theme(plot.background = element_rect(fill = "white", color = NA),
-        panel.background = element_rect(fill = "#F2F2F2", color = NA),
-        panel.grid.major = element_line(color = "white"))
-ggsave(file.path(results_dir, "panel_b_coarse_hist_thr035.png"), p_b_coarse, width = w_single, height = h_single, dpi = dpi_out, bg = "white")
+  theme(plot.background = element_rect(fill = "white", colour = NA),
+        panel.background = element_rect(fill = "#F2F2F2", colour = NA),
+        panel.grid.major = element_line(colour = "white"))
 
-# ---- Compose a vertical figure with (a) + (b) ----
-p_a_tag <- cowplot::ggdraw(p_a_coarse + labs(title = NULL)) +
-  cowplot::draw_label("(a)", x = 0.02, y = 0.98, hjust = 0, vjust = 1, fontface = "bold")
-p_b_tag <- cowplot::ggdraw(p_b_coarse + labs(title = NULL)) +
-  cowplot::draw_label("(b)", x = 0.02, y = 0.98, hjust = 0, vjust = 1, fontface = "bold")
+print(p_b_coarse)
+ggsave(file.path(results_dir, "conditor_panel_b_coarse_hist_thr035.png"), p_b_coarse,
+       width = w_single, height = h_single, dpi = dpi_out, bg = "white")
 
-fig_ab <- cowplot::plot_grid(p_a_tag, p_b_tag, ncol = 1, rel_heights = c(1,1))
+# =====================================================
+# Combined publication figure (coarse panels only, stacked; NO TITLES)
+# =====================================================
+p_a_tag <- ggdraw(p_a_coarse + labs(title = NULL)) +
+  draw_label("(a)", x = 0.02, y = 0.98, hjust = 0, vjust = 1, fontface = "bold")
+p_b_tag <- ggdraw(p_b_coarse + labs(title = NULL)) +
+  draw_label("(b)", x = 0.02, y = 0.98, hjust = 0, vjust = 1, fontface = "bold")
+
+fig_ab  <- plot_grid(p_a_tag, p_b_tag, ncol = 1, rel_heights = c(1,1))
 print(fig_ab)
 
-ggsave(file.path(results_dir, "figure_histograms_panels_ab_COARSE_thrB_035_VERTICAL.png"),
+ggsave(file.path(results_dir, "conditor_figure_histograms_panels_ab_COARSE_thrB_035_VERTICAL.png"),
        fig_ab, width = 7, height = 10, dpi = dpi_out, bg = "white")
 ```
 
+
 # Variable importance table + PDPs
 
-```{r vip-pdp}
+```{r}
+
 suppressPackageStartupMessages({
   library(DALEX); library(tidysdm); library(ggplot2); library(dplyr); library(knitr)
 })                                                                              # quiet attaches
@@ -1136,11 +1574,13 @@ plot_and_save_pdp <- function(var, label){
 plot_and_save_pdp("bio05", "Maximum temperature of warmest month (°C)")
 plot_and_save_pdp("bio06", "Minimum temperature of coldest month (°C)")
 plot_and_save_pdp("bio12", "Annual precipitation (mm)")
+
 ```
 
 # KDE of midden sampling density (optional viz)
 
 ```{r kde-middens}
+
 suppressPackageStartupMessages({ library(rnaturalearth); library(rnaturalearthdata) })  # basemaps
 
 # ---- Build a simple df of midden XYs ----
