@@ -199,7 +199,7 @@ ggplot() +
 ```{r create climate time series}
 # Create a time series of palaeoclimate reconstructions using the 'Krapp2021' dataset
 # Variables used: bio05 (max temp), bio06 (min temp), bio12 (annual precipitation)
-climate_vars <- c('bio05','bio06','bio12')
+climate_vars <- c('bio05','bio06')
 climate_full <- pastclim::region_series(
   bio_variables = climate_vars,  # Specify the variables we are interested in
   data = "Krapp2021",  # Use the Krapp2021 dataset
@@ -227,8 +227,7 @@ Stratified sampling in Environmental space
 
 ```{r build environmental space}
 
-env_space_1950 <- c(climate_full[[1]][[800]], climate_full[[2]][[800]],
-                    climate_full[[3]][[800]])
+env_space_1950 <- c(climate_full[[1]][[800]], climate_full[[2]][[800]])
 ```
 
 
@@ -370,7 +369,7 @@ conditor4 <- conditor %>%
   mutate(time_bp = -300) %>%  # Convert time_step to years before present
   as.data.frame() %>%  # Convert to a data frame
   dplyr::select(-geometry) |># Remove geometry column
-  bind_cols(conditor_df[, c("bio05", "bio06", "bio12")]) %>%  # Bind the climate data to the sf object
+  bind_cols(conditor_df[, c("bio05", "bio06")]) %>%  # Bind the climate data to the sf object
   filter(!is.na(.$bio05)) |>
   mutate(percP = if_else(percP == "pabs", "pseudoabsence", "presence")) |>  # Mutate percP to the correct values
   st_as_sf(coords = c("x", "y")) # Convert back to sf object                               
@@ -384,7 +383,7 @@ conditor4 <- conditor %>%
 ```{r make recipe}
 # Define a recipe for the model where 'class' is the outcome and other variables are predictors
 # Geometry is automatically ignored as a predictor for sf objects
-conditor_rec <- recipe(conditor4, formula = percP ~ bio05 + bio06 + bio12)  # Define the model formula
+conditor_rec <- recipe(conditor4, formula = percP ~ bio05 + bio06)  # Define the model formula
 conditor_rec  # Check the recipe
 ```
 
@@ -406,7 +405,7 @@ conditor_models <- workflow_set(
   # Update the workflow model for GAMs with a formula specifying smooth terms for continuous predictors
   update_workflow_model("default_gam",
                         spec = sdm_spec_gam(),
-                        formula = percP ~ s(bio05, k = 10) + s(bio06, k = 10) + s(bio12, k = 10)) %>%
+                        formula = percP ~ s(bio05, k = 10) + s(bio06, k = 10))  %>%
   # Adjust controls to store information needed for the ensemble model
   option_add(control = control_ensemble_grid())
 ```
@@ -556,8 +555,8 @@ ggsave(
 
 ```{r create LGM}
 # Create a climate raster for the Last Glacial Maximum (LGM) using the correct layer (21) for 20,000 BP
-climate_lgm <- rast(list(climate_full[[1]][[779]], climate_full[[2]][[779]], climate_full[[3]][[779]]))  # Extract 20,000 BP layers
-names(climate_lgm) <- c("bio05", "bio06", "bio12")  # Rename the layers to match the climate variables
+climate_lgm <- rast(list(climate_full[[1]][[779]], climate_full[[2]][[779]]))  # Extract 20,000 BP layers
+names(climate_lgm) <- c("bio05", "bio06")  # Rename the layers to match the climate variables
 
 
 ```
@@ -588,10 +587,9 @@ walk(760:800, function(timestep) {
   # Create a climate snapshot for the current timestep
   climate_snapshot <- rast(list(
     climate_full[[1]][[timestep]], 
-    climate_full[[2]][[timestep]], 
-    climate_full[[3]][[timestep]]
+    climate_full[[2]][[timestep]]
   ))
-  names(climate_snapshot) <- c("bio05", "bio06", "bio12")  # Rename layers to match the climate variables
+  names(climate_snapshot) <- c("bio05", "bio06")  # Rename layers to match the climate variables
 
   # Predict species occurrence for the current climate snapshot
   prediction_raster <- predict_raster(conditor_ensemble, climate_snapshot)
@@ -619,6 +617,8 @@ output_file <- "C:/github/SNR_SDM/Results/conditor Krapp model/predictions_stack
 writeRaster(conditor_spatrast, filename = output_file, overwrite = TRUE)
 ```
 
+
+
 ## Create a Stack of Predictions and Plot for All Time Steps
 
 ## stack o maps
@@ -643,10 +643,9 @@ purrr::walk(760:800, function(timestep) {
   # Climate snapshot for this timestep (bio05,06,12)
   climate_snapshot <- terra::rast(list(
     climate_full[[1]][[timestep]],
-    climate_full[[2]][[timestep]],
-    climate_full[[3]][[timestep]]
+    climate_full[[2]][[timestep]]
   ))
-  names(climate_snapshot) <- c("bio05", "bio06", "bio12")
+  names(climate_snapshot) <- c("bio05", "bio06")
 
   # Predict suitability with the ensemble
   prediction_raster <- predict_raster(conditor_ensemble, climate_snapshot)
@@ -678,82 +677,6 @@ purrr::walk(760:800, function(timestep) {
 })
 ```
 
-
-
-```{r 6 image panel}
-library(ggplot2)
-library(patchwork)
-library(terra)
-library(purrr)
-library(dplyr)
-
-# Extract raster time steps
-raster_times <- terra::time(conditor_spatrast)
-
-# Define target slices
-target_times <- c(-40000, -26000, -21000, -12000, -6000, 0)
-matched_indices <- match(target_times, raster_times)
-panel_tags <- letters[1:length(target_times)]
-
-# Define colors
-bg_color <- "#DCF3FC"
-outline_color <- "black"
-
-# Create each panel (no middens)
-panel_plots <- pmap(
-  list(idx = matched_indices, year = target_times, tag = panel_tags),
-  function(idx, year_bp, tag_label) {
-    current_prediction <- conditor_spatrast[[idx]]
-
-    ggplot() +
-      geom_spatraster(data = current_prediction, aes(fill = mean)) +
-      scale_fill_terrain_c(name = "Probability\nof occurrence", limits = c(0, 1)) +
-      geom_sf(data = australia_outline, fill = NA, color = "grey20", linewidth = 0.3) +
-      coord_sf(xlim = c(112, 150), ylim = c(-40, -10)) +
-      scale_y_continuous(breaks = seq(-40, -10, by = 4)) +
-      scale_x_continuous(breaks = seq(112, 150, by = 8)) +
-      ggtitle(bquote("(" * .(tag_label) * ")  Years BP: " * .(year_bp))) +
-      theme_minimal(base_size = 10) +
-      theme(
-        panel.background = element_rect(fill = bg_color, color = NA),
-        plot.background = element_rect(fill = "white", color = NA),
-        panel.grid.major = element_line(color = "white"),
-        panel.grid.minor = element_blank(),
-        axis.text = element_text(size = 8),
-        axis.title = element_blank(),
-        plot.margin = margin(2, 2, 2, 2),
-        legend.position = "right",
-        legend.title = element_text(size = 11),
-        legend.text = element_text(size = 11)
-      ) +
-      guides(
-        fill = guide_colorbar(
-          title.theme = element_text(size = 11),
-          label.theme = element_text(size = 11)
-        )
-      )
-  }
-)
-
-# Combine into multi-panel figure
-final_panel <- wrap_plots(panel_plots, ncol = 2, guides = "collect") +
-  plot_annotation(
-    title = expression(italic("Leporillus conditor") * " SDM model predictions"),
-    theme = theme(
-      plot.title = element_text(size = 14, face = "bold", hjust = 0.5)
-    )
-  )
-
-# Save the panel
-ggsave(
-  filename = file.path(results_dir, "conditor_model_panel.png"),
-  plot = final_panel,
-  width = 10,
-  height = 9,
-  dpi = 300
-)
-
-```
 
 
 
@@ -847,7 +770,7 @@ print(northernmost)
 #Midden data set is used for additional validation
 
 # Load the independent dataset
-dated_middens <- read.csv(file.path(processed_dir, "datedmiddens.csv"))
+dated_middens <- read.csv(file.path(processed_dir, "Dated-Middens.csv"))
 
 
 # Convert to sf object (assuming it contains longitude and latitude columns)

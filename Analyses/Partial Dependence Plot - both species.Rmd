@@ -97,7 +97,11 @@ plot_zoomed_bio12 <- function() {
       y = "Predicted Suitability",
       colour = "Species"
     ) +
-    coord_cartesian(xlim = c(125, 700)) +  # Zoom to 125–700 mm
+   scale_x_continuous(
+  breaks = seq(125, 400, by = 50),
+  minor_breaks = seq(125, 400, by = 25)
+) +
+coord_cartesian(xlim = c(125, 400)) +  # Zoom to 125–700 mm
     theme_minimal(base_size = 12) +
     theme(
       plot.title = element_blank(),
@@ -116,7 +120,7 @@ plot_zoomed_bio12 <- function() {
   
   # Save plot with updated filename
   ggsave(
-    filename = file.path(combined_outdir, "pdp_bio12_zoomed_125_700mm.png"),
+    filename = file.path(combined_outdir, "pdp_bio12_zoomed_125_400mm.png"),
     plot = p,
     width = 6, height = 4, dpi = 300
   )
@@ -131,6 +135,7 @@ pdp_bio12_zoomed <- plot_zoomed_bio12()
 
 
 ```
+
 ```{r}
  # Combine all four PDPs into a 2x2 grid
 # Combine all four PDPs into a 2x2 grid with shared theme

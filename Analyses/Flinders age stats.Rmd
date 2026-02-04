@@ -1,0 +1,260 @@
+---
+title: "Flinders age"
+author: "Annie"
+date: "2026-01-06"
+output: html_document
+---
+
+title: "Flinders middens: age distribution and saturation (oldest per midden)"
+output: html_document
+Setup
+
+```{r setup, message=FALSE, warning=FALSE}
+library(readr)
+library(dplyr)
+library(stringr)
+library(purrr)
+library(ggplot2)
+
+set.seed(1)
+
+out_dir <- "C:/github/SNR_SDM/Results/age distribution and saturation/flinders"
+dir.create(out_dir, recursive = TRUE, showWarnings = FALSE)
+```
+
+Load and collapse to oldest age per midden
+
+```{r load}
+fl_raw <- read_csv(
+"C:/github/SNR_SDM/Data/processed/Flinders middens.csv",
+show_col_types = FALSE
+) %>%
+rename(
+sample_name = Sample_Name,
+age_cal_bp = 'mean age Cal BP'
+) %>%
+mutate(
+sample_name = str_squish(as.character(sample_name)),
+midden_id = str_extract(sample_name, "^\\S+"),
+age_cal_bp = abs(as.numeric(age_cal_bp))
+) %>%
+filter(!is.na(midden_id), !is.na(age_cal_bp))
+
+fl_midden <- fl_raw %>%
+group_by(midden_id) %>%
+summarise(
+n_dates = n(),
+oldest_bp = max(age_cal_bp),
+youngest_bp = min(age_cal_bp),
+.groups = "drop"
+)
+
+ages <- fl_midden$oldest_bp
+
+list(
+n_rows = nrow(fl_raw),
+n_middens = nrow(fl_midden)
+)
+
+fl_midden %>% arrange(desc(oldest_bp)) %>% print(n = min(12, nrow(fl_midden)))
+```
+
+Core plots
+
+```{r hist_kde}
+p_hist_kde <-
+ggplot(fl_midden, aes(x = oldest_bp)) +
+geom_histogram(aes(y = after_stat(density)), bins = 12, alpha = 0.5) +
+geom_density(linewidth = 0.8) +
+labs(
+x = "Oldest dated age per midden (Cal BP; abs)",
+y = "Density"
+) +
+  theme(
+    plot.background  = element_rect(fill = "white", colour = NA),
+    panel.background = element_rect(fill = "white", colour = NA),
+    panel.grid.major = element_line(colour = "grey90"),
+    panel.grid.minor = element_line(colour = "grey90")
+  )
+
+
+p_hist_kde
+ggsave(
+file.path(out_dir, "hist_kde_oldest_age.png"),
+p_hist_kde,
+width = 7, height = 5, dpi = 300
+)
+```
+
+```{r ecdf}
+p_ecdf <-
+ggplot(fl_midden, aes(x = oldest_bp)) +
+stat_ecdf(geom = "step", linewidth = 0.8) +
+labs(
+x = "Oldest dated age per midden (Cal BP; abs)",
+y = "ECDF"
+) +
+theme_minimal(base_size = 12)
+
+p_ecdf
+ggsave(
+file.path(out_dir, "ecdf_oldest_age.png"),
+p_ecdf,
+width = 7, height = 5, dpi = 300
+)
+```
+
+```{r n_dates_per_midden}
+p_ndates <-
+ggplot(fl_midden, aes(x = n_dates)) +
+geom_bar() +
+labs(
+x = "Number of dated samples per midden",
+y = "Count of middens"
+) +
+theme_minimal(base_size = 12)
+
+p_ndates
+ggsave(
+file.path(out_dir, "dates_per_midden.png"),
+p_ndates,
+width = 6, height = 4, dpi = 300
+)
+```
+
+Bootstrap uncertainty + learning curves
+
+```{r bootstrap_learning}
+bootstrap_stat <- function(x, stat_fn, B = 5000) {
+replicate(B, stat_fn(sample(x, size = length(x), replace = TRUE)))
+}
+
+learning_curve <- function(x, stat_fn, n_min = 3, B = 2000) {
+x <- x[is.finite(x)]
+map_dfr(n_min:length(x), function(n) {
+sims <- replicate(B, stat_fn(sample(x, size = n, replace = TRUE)))
+tibble(
+n = n,
+est = mean(sims),
+lo = quantile(sims, 0.025),
+hi = quantile(sims, 0.975)
+)
+})
+}
+
+boot_median <- bootstrap_stat(ages, median, B = 5000)
+boot_max <- bootstrap_stat(ages, max, B = 5000)
+
+median_ci <- quantile(boot_median, c(0.025, 0.5, 0.975))
+max_ci <- quantile(boot_max, c(0.025, 0.5, 0.975))
+
+ci_tbl <- tibble(
+statistic = c("median(oldest_bp)", "max(oldest_bp)"),
+lo = c(median_ci[[1]], max_ci[[1]]),
+mid = c(median_ci[[2]], max_ci[[2]]),
+hi = c(median_ci[[3]], max_ci[[3]])
+)
+
+ci_tbl
+write_csv(ci_tbl, file.path(out_dir, "bootstrap_CIs.csv"))
+
+lc_all <- bind_rows(
+learning_curve(ages, median, n_min = 3, B = 2000) %>% mutate(stat = "Median"),
+learning_curve(ages, max, n_min = 3, B = 2000) %>% mutate(stat = "Max")
+)
+
+p_lc <-
+ggplot(lc_all, aes(x = n, y = est)) +
+geom_ribbon(aes(ymin = lo, ymax = hi), alpha = 0.2) +
+geom_line(linewidth = 0.8) +
+facet_wrap(~stat, scales = "free_y") +
+labs(
+x = "Number of dated middens",
+y = "Bootstrap mean estimate (95% interval)"
+) +
+theme_minimal(base_size = 12)
+
+p_lc
+ggsave(
+file.path(out_dir, "learning_curves_median_max.png"),
+p_lc,
+width = 8, height = 5, dpi = 300
+)
+
+write_csv(lc_all, file.path(out_dir, "learning_curves_data.csv"))
+
+```
+
+```{r}
+# --- Text-only statistical summary -------------------------------------------
+
+ages <- fl_midden$oldest_bp
+n_middens <- length(ages)
+
+cat("\nFLINDERS MIDDENS – TEXT SUMMARY\n")
+cat("--------------------------------\n")
+cat("Number of middens:", n_middens, "\n\n")
+
+cat("Oldest dated age per midden (Cal BP, absolute):\n")
+cat("  Minimum:", min(ages), "\n")
+cat("  Maximum:", max(ages), "\n")
+cat("  Median :", median(ages), "\n")
+cat("  IQR    :", IQR(ages), "\n\n")
+
+# --- Bootstrap uncertainty ---------------------------------------------------
+
+set.seed(1)
+
+B <- 5000
+boot_median <- replicate(B, median(sample(ages, replace = TRUE)))
+boot_max    <- replicate(B, max(sample(ages, replace = TRUE)))
+
+median_ci <- quantile(boot_median, c(0.025, 0.5, 0.975))
+max_ci    <- quantile(boot_max,    c(0.025, 0.5, 0.975))
+
+cat("Bootstrap 95% confidence intervals:\n")
+cat("  Median oldest age:\n")
+cat("    2.5% :", round(median_ci[1]), "\n")
+cat("    50%  :", round(median_ci[2]), "\n")
+cat("    97.5%:", round(median_ci[3]), "\n\n")
+
+cat("  Maximum oldest age:\n")
+cat("    2.5% :", round(max_ci[1]), "\n")
+cat("    50%  :", round(max_ci[2]), "\n")
+cat("    97.5%:", round(max_ci[3]), "\n\n")
+
+# --- Saturation / stability check -------------------------------------------
+
+tolerance_bp <- 2000  # change if you want (e.g. 1000 or 3000)
+step <- 5
+
+set.seed(2)
+
+learning <- lapply(3:n_middens, function(n) {
+  sims <- replicate(2000, median(sample(ages, size = n, replace = TRUE)))
+  c(
+    n = n,
+    est = mean(sims),
+    lo  = quantile(sims, 0.025),
+    hi  = quantile(sims, 0.975)
+  )
+})
+
+learning <- do.call(rbind, learning)
+learning <- as.data.frame(learning)
+
+learning$delta <- abs(learning$est - dplyr::lead(learning$est, step))
+
+stable_n <- learning$n[learning$delta < tolerance_bp][1]
+
+cat("Stability assessment (median oldest age):\n")
+cat("  Tolerance:", tolerance_bp, "years\n")
+cat("  Step size:", step, "additional middens\n")
+
+if (!is.na(stable_n)) {
+  cat("  Median estimate stabilises by ~", stable_n,
+      "middens (changes <", tolerance_bp, "years thereafter)\n")
+} else {
+  cat("  Median estimate does NOT stabilise within tolerance across available middens\n")
+}
+```

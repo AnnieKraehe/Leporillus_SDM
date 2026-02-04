@@ -8,7 +8,11 @@ from the GBIF Sensitive Species Data Best Practices
 a precautionary approach to spatial data sharing.
 
 Datasets:
-- apicalis_flat.csv: Primary dataset used in the main SDM analysis. Occurrence 
+- apicalis.csv: Primary dataset used in the apicalis SDM analysis. Occurrence 
+  coordinates were rounded to 0.1° to minimise location precision while retaining 
+  modelling utility.
+
+- Conditor.csv: Primary dataset used in the conditor SDM analysis. Occurrence 
   coordinates were rounded to 0.1° to minimise location precision while retaining 
   modelling utility.
 
@@ -16,12 +20,7 @@ Datasets:
   for exploratory comparisons. These illustrate how temporal structuring 
   (z-axis information) affects model quality and interpretation. They were also 
   denatured to 0.1°.
+- Pearson_masterlist_compiled.csv: this is the cleaned and compiled version of Pearson's   master list, which is a work book with multiple sheets. 
+	
 
-No identifying attributes have been included to distinguish midden or subfossil 
-points within any file. These generalised data are suitable for species 
-distribution modelling at broad spatial and temporal scales but are not intended 
-for fine-scale locality studies.
-
-Full-resolution coordinate data are not included in this archive and are not 
-available for public release. These data may be shared on request, subject to 
-appropriate use conditions.
+The raw data folder contains the datasets I have used for this research, includng meta data and refrences. Again, all coordinate data have been generalised to a spatial resolution of 0.1 decimal degrees, unless publicly available.

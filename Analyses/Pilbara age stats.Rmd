@@ -1,0 +1,317 @@
+---
+title: "age distribution and saturation"
+author: "Annie"
+date: "2026-01-06"
+output: html_document
+---
+
+
+
+```{r setup, message=FALSE, warning=FALSE}
+
+# --- Libraries ---------------------------------------------------------------
+
+library(readr)
+library(dplyr)
+library(stringr)
+library(tidyr)
+library(purrr)
+library(ggplot2)
+
+set.seed(1)
+out_dir <- "C:/github/SNR_SDM/Results/age distribution and saturation"
+dir.create(out_dir, recursive = TRUE, showWarnings = FALSE)
+```
+
+## Load and tidy data
+
+```{r load}
+
+pil_raw <- read_csv(
+  "C:/github/SNR_SDM/Data/raw/Pilbara middens for calculations.csv",
+  show_col_types = FALSE
+) %>%
+  rename(
+    age_cal_bp  = `mean age Cal BP`,
+    sample_name = Sample_Name
+  ) %>%
+  mutate(
+    sample_name = str_squish(as.character(sample_name)),
+    age_cal_bp  = as.numeric(age_cal_bp),
+    # Extract the rock shelter code and the "SNR" token
+    shelter_id  = str_extract(sample_name, "^\\S+"),
+    # Extract the midden token after "SNR" (e.g. "1A", "3B", "2")
+    midden_tok  = str_match(sample_name, "\\bSNR\\s+(\\S+)")[, 2],
+    # Pull out the leading digits (e.g. "1" from "1A")
+    midden_num  = str_extract(midden_tok, "^\\d+"),
+    # Midden ID = shelter + SNR + number (e.g. "PIL_2001 SNR 1")
+    midden_id   = str_c(shelter_id, "SNR", midden_num, sep = " ")
+  ) %>%
+  filter(!is.na(midden_id), !is.na(age_cal_bp))
+
+# Sanity checks
+pil_raw %>% slice_head(n = 12)
+pil_raw %>% count(midden_id, sort = TRUE)
+
+# Collapse to oldest age per midden (your chosen rule)
+pil_midden <- pil_raw %>%
+  group_by(midden_id) %>%
+  summarise(
+    n_dates   = n(),
+    oldest_bp = max(age_cal_bp, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+list(
+  n_rows = nrow(pil_raw),
+  n_middens = nrow(pil_midden)
+)
+
+pil_midden %>% arrange(desc(oldest_bp)) %>% print(n = min(12, nrow(pil_midden)))
+
+
+# Collapse to one value per midden: oldest dated age
+
+pil_midden <- pil_raw %>%
+group_by(midden_id) %>%
+summarise(
+n_dates     = n(),
+oldest_bp   = max(age_cal_bp, na.rm = TRUE),
+youngest_bp = min(age_cal_bp, na.rm = TRUE),
+.groups = "drop"
+)
+
+ages <- pil_midden$oldest_bp
+N <- length(ages)
+
+# Sanity checks
+
+list(
+n_rows    = nrow(pil_raw),
+n_middens = N
+)
+
+pil_midden %>% arrange(desc(oldest_bp)) %>% print(n = min(10, nrow(pil_midden)))
+```
+
+## Core plots
+
+### Histogram + density
+
+```{r hist_kde}
+
+
+p_hist_kde <-
+  ggplot(pil_midden, aes(x = oldest_bp)) +
+  geom_histogram(
+    aes(y = after_stat(density)),
+    bins = 12,
+    alpha = 0.5
+  ) +
+  geom_density(linewidth = 0.8) +
+  labs(
+    x = "Oldest dated age per midden (Cal BP)",
+    y = "Density"
+  ) +
+   theme(
+    plot.background  = element_rect(fill = "white", colour = NA),
+    panel.background = element_rect(fill = "white", colour = NA),
+    panel.grid.major = element_line(colour = "grey90"),
+    panel.grid.minor = element_line(colour = "grey90")
+  )
+
+
+# print to document
+p_hist_kde
+
+# save to file
+ggsave(
+  filename = file.path(out_dir, "Pilbara_hist_kde_oldest_age.png"),
+  plot    = p_hist_kde,
+  width   = 7,
+  height  = 5,
+  dpi     = 300
+)
+
+
+```
+
+### ECDF
+
+```{r ecdf}
+p_ecdf <-
+ggplot(pil_midden, aes(x = oldest_bp)) +
+stat_ecdf(geom = "step", linewidth = 0.8) +
+labs(
+x = "Oldest dated age per midden (Cal BP)",
+y = "ECDF"
+) +
+theme_minimal(base_size = 12)
+
+p_ecdf
+ggsave(
+file.path(out_dir, "ecdf_oldest_age.png"),
+p_ecdf,
+width = 7, height = 5, dpi = 300
+)
+```
+
+### Dates per midden (diagnostic)
+
+```{r n_dates_per_midden}
+p_ndates <-
+ggplot(pil_midden, aes(x = n_dates)) +
+geom_bar() +
+labs(
+x = "Number of dated samples per midden",
+y = "Count of middens"
+) +
+theme_minimal(base_size = 12)
+
+p_ndates
+ggsave(
+file.path(out_dir, "dates_per_midden.png"),
+p_ndates,
+width = 6, height = 4, dpi = 300
+)
+```
+
+## Bootstrap uncertainty
+
+```{r bootstrap_ci}
+bootstrap_stat <- function(x, stat_fn, B = 5000) {
+x <- x[is.finite(x)]
+replicate(B, stat_fn(sample(x, size = length(x), replace = TRUE)))
+}
+
+boot_median <- bootstrap_stat(ages, median, B = 5000)
+boot_max    <- bootstrap_stat(ages, max,    B = 5000)
+
+median_ci <- quantile(boot_median, c(0.025, 0.5, 0.975))
+max_ci    <- quantile(boot_max,    c(0.025, 0.5, 0.975))
+
+list(
+median_oldest_bp_ci = median_ci,
+max_oldest_bp_ci    = max_ci
+)
+```
+
+## Learning curves: “how many middens is enough?”
+
+```{r learning_curves}
+learning_curve <- function(x, stat_fn, n_min = 3, B = 2000) {
+n_seq <- n_min:length(x)
+
+map_dfr(n_seq, function(n) {
+sims <- replicate(B, stat_fn(sample(x, size = n, replace = TRUE)))
+tibble(
+n = n,
+est = mean(sims),
+lo  = quantile(sims, 0.025),
+hi  = quantile(sims, 0.975)
+)
+})
+}
+
+lc_median <- learning_curve(ages, median) %>% mutate(stat = "Median")
+lc_max    <- learning_curve(ages, max)    %>% mutate(stat = "Max")
+
+lc_all <- bind_rows(lc_median, lc_max)
+
+p_lc <-
+ggplot(lc_all, aes(x = n, y = est)) +
+geom_ribbon(aes(ymin = lo, ymax = hi), alpha = 0.2) +
+geom_line(linewidth = 0.8) +
+facet_wrap(~stat, scales = "free_y") +
+labs(
+x = "Number of dated middens",
+y = "Bootstrap mean estimate (95% interval)"
+) +
+theme_minimal(base_size = 12)
+
+p_lc
+ggsave(
+file.path(out_dir, "learning_curves_median_max.png"),
+p_lc,
+width = 8, height = 5, dpi = 300
+)
+```
+
+
+```{r}
+# --- Text-only statistical summary: Pilbara -------------------------------
+
+ages <- pil_midden$oldest_bp
+n_middens <- length(ages)
+
+cat("\nPILBARA MIDDENS – TEXT SUMMARY\n")
+cat("--------------------------------\n")
+cat("Number of middens:", n_middens, "\n\n")
+
+cat("Oldest dated age per midden (Cal BP):\n")
+cat("  Minimum:", min(ages), "\n")
+cat("  Maximum:", max(ages), "\n")
+cat("  Median :", median(ages), "\n")
+cat("  IQR    :", IQR(ages), "\n\n")
+
+# --- Bootstrap uncertainty -------------------------------------------------
+
+set.seed(1)
+
+B <- 5000
+boot_median <- replicate(B, median(sample(ages, replace = TRUE)))
+boot_max    <- replicate(B, max(sample(ages, replace = TRUE)))
+
+median_ci <- quantile(boot_median, c(0.025, 0.5, 0.975))
+max_ci    <- quantile(boot_max,    c(0.025, 0.5, 0.975))
+
+cat("Bootstrap 95% confidence intervals:\n")
+cat("  Median oldest age:\n")
+cat("    2.5% :", round(median_ci[1]), "\n")
+cat("    50%  :", round(median_ci[2]), "\n")
+cat("    97.5%:", round(median_ci[3]), "\n\n")
+
+cat("  Maximum oldest age:\n")
+cat("    2.5% :", round(max_ci[1]), "\n")
+cat("    50%  :", round(max_ci[2]), "\n")
+cat("    97.5%:", round(max_ci[3]), "\n\n")
+
+# --- Saturation / stability check ------------------------------------------
+
+tolerance_bp <- 2000  # change if you want (e.g. 1000, 3000)
+step <- 5
+
+set.seed(2)
+
+learning <- lapply(3:n_middens, function(n) {
+  sims <- replicate(2000, median(sample(ages, size = n, replace = TRUE)))
+  c(
+    n = n,
+    est = mean(sims),
+    lo  = quantile(sims, 0.025),
+    hi  = quantile(sims, 0.975)
+  )
+})
+
+learning <- do.call(rbind, learning)
+learning <- as.data.frame(learning)
+
+learning$delta <- abs(learning$est - dplyr::lead(learning$est, step))
+
+stable_n <- learning$n[learning$delta < tolerance_bp][1]
+
+cat("Stability assessment (median oldest age):\n")
+cat("  Tolerance:", tolerance_bp, "years\n")
+cat("  Step size:", step, "additional middens\n")
+
+if (!is.na(stable_n)) {
+  cat("  Median estimate stabilises by ~",
+      stable_n,
+      "middens (changes <", tolerance_bp,
+      "years thereafter)\n")
+} else {
+  cat("  Median estimate does NOT stabilise within tolerance across available middens\n")
+}
+
+```
+
