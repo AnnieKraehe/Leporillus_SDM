@@ -361,7 +361,11 @@ perf_plot <- ggplot(perf_data, aes(x = model, y = .estimate, fill = model)) +
   scale_fill_manual(values = color_map, name = "Model Type") +
   scale_color_manual(values = rep("black", length(model_order)), guide = "none") +
   facet_wrap(~ metric_label, scales = "free_y") +
-  labs(title = "Model performance across algorithms (fold-level)", x = NULL, y = "Performance metric") +
+  labs(
+     title = expression("Model performance:" ~ italic("Leporillus apicalis")),
+  x = NULL,
+  y = "Performance metric", 
+    x = NULL, y = "Performance metric") +
   theme_minimal(base_size = 12) +
   theme(
     panel.background  = element_rect(fill = "#EEEEEE", color = NA),
@@ -378,7 +382,7 @@ perf_plot <- ggplot(perf_data, aes(x = model, y = .estimate, fill = model)) +
     strip.text        = element_text(margin = margin(b = 5))
   )
 
-ggsave(file.path(results_dir, "ensemble", "ensemble_performance_clean.png"), perf_plot,
+ggsave(file.path(results_dir, "ensemble", " apicalis_ensemble_performance_clean.jpg"), perf_plot,
        width = 8, height = 5, dpi = 300)                                           # save figure
 perf_plot                                                                            # print plot
 
@@ -1237,6 +1241,84 @@ cat(sprintf("Sorensen (1°): %.3f\n",        sorensen))
 cat(sprintf("F2 score (1°): %.3f\n",        f2score))
 ```
 
+
+
+##Centroid
+```{r}
+# Calculate suitability-weighted centroid for each timestep in apicalis_spatrast
+
+apicalis_centroids <- lapply(1:nlyr(apicalis_spatrast), function(i) {
+  r <- apicalis_spatrast[[i]]
+
+  # Extract suitability values and matching coordinates (including NAs)
+  vals <- terra::values(r)[, 1]
+  coords <- terra::crds(r, na.rm = FALSE)
+
+  # Filter to cells with non-NA and positive suitability values
+  valid <- !is.na(vals) & vals > 0
+  if (sum(valid) == 0) return(NULL)  # Skip if no valid cells
+
+  weights <- vals[valid]
+  coords <- coords[valid, ]
+
+  # Calculate weighted centroid
+  centroid_x <- sum(coords[, 1] * weights) / sum(weights)
+  centroid_y <- sum(coords[, 2] * weights) / sum(weights)
+
+  data.frame(
+    time_bp = time(apicalis_spatrast)[i],
+    longitude = centroid_x,
+    latitude = centroid_y
+  )
+}) %>% bind_rows()
+
+
+# Rainbow colors: red = recent, violet = old
+viridis_colors <- viridis(41, option = "H")
+
+
+
+ggplot(apicalis_centroids, aes(x = longitude, y = latitude)) +
+  geom_path(color = "grey50", linewidth = 1) +
+  geom_point(aes(color = time_bp), size = 2) +
+ scale_color_gradientn(
+  colors = viridis_colors,
+  name = "Years BP",
+  limits = c(-40000, 0),
+  breaks = c(-40000, -30000, -20000, -10000, 0),
+  labels = c("40k", "30k", "20k", "10k", "0")
+) +
+  coord_fixed(xlim = c(129, 131), ylim = c(-28, -24.8)) +  # Consistent extent
+  labs(
+    title = "Centroid shift of predicted apicalis habitat through time",
+    x = "Longitude", y = "Latitude"
+  ) +
+  theme_minimal(base_size = 11) +
+   theme(
+    plot.background = element_rect(fill = "white", color = NA),
+    panel.background = element_rect(fill = "#F2F2F2", color = NA),
+    panel.grid.major = element_line(color = "#C4C4C4", linewidth = 0.3),
+    panel.grid.minor = element_line(color = "#C4C4C4", linewidth = 0.2),
+    panel.border = element_rect(color = "#C4C4C4", fill = NA, linewidth = 0.3)
+  )
+
+
+# Save output with clean background
+ggsave(
+  filename = file.path(results_dir, "apicalis_centroid_shift_plot.png"),
+  plot = last_plot(),
+  width = 6,
+  height = 6,
+  dpi = 300,
+  bg = "white"
+)
+
+
+# Identify the timestep with the northernmost centroid
+northernmost <- apicalis_centroids %>% filter(latitude == max(latitude))
+print(northernmost)
+
+```
 # Centroid through time & diff map (0 vs 20 ka)
 
 ```{r centroid-diff, dependson="globals"}
@@ -1605,10 +1687,18 @@ p_a_full <- ggplot(plot_df_full, aes(x = suitability, fill = group)) +
   theme_minimal(base_size = 12)
 
 # Save full-resolution histogram
+hist_dir <- file.path(results_dir, "Histograms")
+dir.create(hist_dir, showWarnings = FALSE, recursive = TRUE)
+
 ggsave(
-  file.path(results_dir, "panel_a_full_hist.png"),
-  p_a_full, width = w_single, height = h_single, dpi = dpi_out, bg = "white"
+  file.path(hist_dir, "panel_a_full_hist.png"),
+  p_a_full,
+  width = w_single,
+  height = h_single,
+  dpi = dpi_out,
+  bg = "white"
 )
+
 
 # ---- Coarse-resolution version of panel (a) ----
 
@@ -1662,7 +1752,7 @@ p_a_coarse <- ggplot(plot_df_c, aes(x = suitability, fill = group)) +
 
 # Save coarse-resolution histogram
 ggsave(
-  file.path(results_dir, "panel_a_coarse_hist.png"),
+  file.path(hist_dir, "panel_a_coarse_hist.png"),
   p_a_coarse, width = w_single, height = h_single, dpi = dpi_out, bg = "white"
 )
 
@@ -1701,7 +1791,7 @@ p_b_full <- ggplot(persist_full, aes(x = persist_ka)) +
 
 # Save full-resolution persistence histogram
 ggsave(
-  file.path(results_dir, "panel_b_full_hist_thr035.png"),
+  file.path(hist_dir, "panel_b_full_hist_thr035.png"),
   p_b_full, width = w_single, height = h_single, dpi = dpi_out, bg = "white"
 )
 
@@ -1733,7 +1823,7 @@ p_b_coarse <- ggplot(persist_coarse, aes(x = persist_ka)) +
 
 # Save coarse-resolution persistence histogram
 ggsave(
-  file.path(results_dir, "panel_b_coarse_hist_thr035.png"),
+  file.path(hist_dir, "panel_b_coarse_hist_thr035.png"),
   p_b_coarse, width = w_single, height = h_single, dpi = dpi_out, bg = "white"
 )
 
@@ -1752,7 +1842,7 @@ print(fig_ab)
 
 # Save combined figure
 ggsave(
-  file.path(results_dir, "figure_histograms_panels_ab_COARSE_thrB_035_VERTICAL.png"),
+  file.path(hist_dir, "figure_histograms_panels_ab_COARSE_thrB_035_VERTICAL.png"),
   fig_ab, width = 7, height = 10, dpi = dpi_out, bg = "white"
 )
 
