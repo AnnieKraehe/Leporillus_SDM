@@ -11,6 +11,97 @@ combined_outdir <- "C:/github/SNR_SDM/Results/stratified environmental sampling/
 dir.create(combined_outdir, showWarnings = FALSE, recursive = TRUE)
 ```
 
+#Model performance
+```{r}
+# ---- helper: make performance plot for a species ----
+make_perf_plot <- function(models_tbl, species_expr) {
+
+  workflow_labels <- c(
+    default_gam = "Generalised Additive Model",
+    default_gbm = "Boosted Tree",
+    default_glm = "Generalised Linear Model",
+    default_rf  = "Random Forest"
+  )
+  model_order <- c("Generalised Additive Model", "Boosted Tree", "Generalised Linear Model", "Random Forest")
+
+  metric_labels <- c(boyce_cont = "Boyce Index", roc_auc = "AUC", tss_max = "TSS")
+
+  color_map <- c(
+    "Generalised Additive Model" = "#FF61C3",
+    "Boosted Tree"               = "#00B140",
+    "Generalised Linear Model"   = "#00BFFF",
+    "Random Forest"              = "#BC43FF"
+  )
+
+  perf_data <- models_tbl |>
+    dplyr::mutate(metrics = purrr::map(result, collect_metrics, summarize = FALSE)) |>
+    dplyr::select(wflow_id, metrics) |>
+    tidyr::unnest(metrics) |>
+    dplyr::filter(.metric %in% names(metric_labels)) |>
+    dplyr::mutate(
+      model        = factor(workflow_labels[wflow_id], levels = model_order),
+      metric_label = factor(metric_labels[.metric], levels = c("Boyce Index", "AUC", "TSS"))
+    )
+
+  ggplot2::ggplot(perf_data, ggplot2::aes(x = model, y = .estimate, fill = model)) +
+    ggplot2::geom_boxplot(width = 0.6, alpha = 0.9, outlier.shape = NA) +
+    ggplot2::geom_jitter(
+      ggplot2::aes(colour = model),
+      size = 1.3, width = 0.15, alpha = 0.4, stroke = 0.3, shape = 21
+    ) +
+    ggplot2::scale_fill_manual(values = color_map, name = "Model Type") +
+    ggplot2::scale_colour_manual(values = rep("black", length(model_order)), guide = "none") +
+    ggplot2::facet_wrap(~ metric_label, scales = "free_y") +
+    ggplot2::labs(
+      title = species_expr,
+      x = NULL,
+      y = "Performance metric"
+    ) +
+    ggplot2::theme_minimal(base_size = 12) +
+    ggplot2::theme(
+      panel.background  = ggplot2::element_rect(fill = "#EEEEEE", colour = NA),
+      plot.background   = ggplot2::element_rect(fill = "white", colour = NA),
+      panel.grid.major  = ggplot2::element_line(colour = "white"),
+      panel.grid.minor  = ggplot2::element_blank(),
+      axis.text.x       = ggplot2::element_blank(),
+      axis.ticks.x      = ggplot2::element_blank(),
+      legend.position   = "right", # will be overridden in combined
+      legend.direction  = "vertical",
+      legend.title      = ggplot2::element_text(size = 11),
+      legend.text       = ggplot2::element_text(size = 10),
+      plot.title        = ggplot2::element_text(face = "bold", size = 13),
+      strip.text        = ggplot2::element_text(margin = ggplot2::margin(b = 5))
+    )
+}
+
+# ---- build the two plots ----
+p_apicalis  <- make_perf_plot(apicalis_models,  expression(italic("Leporillus apicalis")))
+p_conditor  <- make_perf_plot(conditor_models,  expression(italic("Leporillus conditor")))
+
+# ---- combine vertically, collect legend once, bottom-right ----
+combined_perf <- (p_apicalis / p_conditor) +
+  patchwork::plot_layout(guides = "collect") &
+  ggplot2::theme(
+    legend.position = "bottom",
+    legend.justification = "right",
+    legend.background = ggplot2::element_rect(fill = "white", colour = NA),
+    legend.key = ggplot2::element_rect(fill = "white", colour = NA)
+  )
+
+
+# ---- save ----
+ggplot2::ggsave(
+  filename = file.path(combined_outdir, "combined_ensemble_performance.jpg"),
+  plot = combined_perf,
+  width = 8, height = 10, dpi = 300, bg = "white"
+)
+
+combined_perf
+
+
+```
+
+
 #PDP
 ```{r PDP}
 library(DALEX)
@@ -73,7 +164,6 @@ pdp_bio12 <- plot_combined_pdp("bio12", "Annual precipitation (mm)")
 
 ```
 
-# Create zoomed BIO12 PDP
 ```{r}
 
 
@@ -141,7 +231,6 @@ pdp_bio12_zoomed <- plot_zoomed_bio12()
 # Combine all four PDPs into a 2x2 grid
 ```{r}
  # Combine all four PDPs into a 2x2 grid
-# Combine all four PDPs into a 2x2 grid with shared theme
 combined_pdp_all <- (pdp_bio05 + pdp_bio06) / (pdp_bio12 + pdp_bio12_zoomed) +
   plot_layout(guides = "collect") +
   plot_annotation(tag_levels = 'a', tag_prefix = "(", tag_suffix = ")") &
@@ -164,7 +253,7 @@ ggsave(
 
 
 ```{r}
-
+#PDP combined - prettier
 library(patchwork)
 library(ggplot2)
 library(scales)  # alpha()
@@ -573,7 +662,6 @@ vip_plot
 ```
 
 #Centroid
-
 ```{r centroid combined}
 library(ggplot2)
 library(patchwork)
@@ -875,217 +963,190 @@ ggsave(
 )
 
 ```
-
-#model performance
+#Centroid and diff map
 ```{r}
-# ---- helper: make performance plot for a species ----
-make_perf_plot <- function(models_tbl, species_expr) {
+suppressPackageStartupMessages({
+  library(terra)
+  library(sf)
+  library(dplyr)
+  library(ggplot2)
+  library(ggnewscale)
+  library(patchwork)
+  library(grid)   # unit()
+})
 
-  workflow_labels <- c(
-    default_gam = "Generalised Additive Model",
-    default_gbm = "Boosted Tree",
-    default_glm = "Generalised Linear Model",
-    default_rf  = "Random Forest"
-  )
-  model_order <- c("Generalised Additive Model", "Boosted Tree", "Generalised Linear Model", "Random Forest")
-
-  metric_labels <- c(boyce_cont = "Boyce Index", roc_auc = "AUC", tss_max = "TSS")
-
-  color_map <- c(
-    "Generalised Additive Model" = "#FF61C3",
-    "Boosted Tree"               = "#00B140",
-    "Generalised Linear Model"   = "#00BFFF",
-    "Random Forest"              = "#BC43FF"
-  )
-
-  perf_data <- models_tbl |>
-    dplyr::mutate(metrics = purrr::map(result, collect_metrics, summarize = FALSE)) |>
-    dplyr::select(wflow_id, metrics) |>
-    tidyr::unnest(metrics) |>
-    dplyr::filter(.metric %in% names(metric_labels)) |>
-    dplyr::mutate(
-      model        = factor(workflow_labels[wflow_id], levels = model_order),
-      metric_label = factor(metric_labels[.metric], levels = c("Boyce Index", "AUC", "TSS"))
-    )
-
-  ggplot2::ggplot(perf_data, ggplot2::aes(x = model, y = .estimate, fill = model)) +
-    ggplot2::geom_boxplot(width = 0.6, alpha = 0.9, outlier.shape = NA) +
-    ggplot2::geom_jitter(
-      ggplot2::aes(colour = model),
-      size = 1.3, width = 0.15, alpha = 0.4, stroke = 0.3, shape = 21
-    ) +
-    ggplot2::scale_fill_manual(values = color_map, name = "Model Type") +
-    ggplot2::scale_colour_manual(values = rep("black", length(model_order)), guide = "none") +
-    ggplot2::facet_wrap(~ metric_label, scales = "free_y") +
-    ggplot2::labs(
-      title = species_expr,
-      x = NULL,
-      y = "Performance metric"
-    ) +
-    ggplot2::theme_minimal(base_size = 12) +
-    ggplot2::theme(
-      panel.background  = ggplot2::element_rect(fill = "#EEEEEE", colour = NA),
-      plot.background   = ggplot2::element_rect(fill = "white", colour = NA),
-      panel.grid.major  = ggplot2::element_line(colour = "white"),
-      panel.grid.minor  = ggplot2::element_blank(),
-      axis.text.x       = ggplot2::element_blank(),
-      axis.ticks.x      = ggplot2::element_blank(),
-      legend.position   = "right", # will be overridden in combined
-      legend.direction  = "vertical",
-      legend.title      = ggplot2::element_text(size = 11),
-      legend.text       = ggplot2::element_text(size = 10),
-      plot.title        = ggplot2::element_text(face = "bold", size = 13),
-      strip.text        = ggplot2::element_text(margin = ggplot2::margin(b = 5))
-    )
+# ---- shared diff colour limits across BOTH species ----
+get_diff_vals <- function(spatrast) {
+  r_times <- as.numeric(terra::time(spatrast))
+  idx_0   <- which.min(abs(r_times - 0))
+  idx_20  <- which.min(abs(r_times + 20000))
+  r_diff  <- spatrast[[idx_0]] - spatrast[[idx_20]]
+  r_diff  <- terra::mask(r_diff, terra::vect(australia_outline))
+  terra::values(r_diff)[, 1]
 }
 
-# ---- build the two plots ----
-p_apicalis  <- make_perf_plot(apicalis_models,  expression(italic("Leporillus apicalis")))
-p_conditor  <- make_perf_plot(conditor_models,  expression(italic("Leporillus conditor")))
+vals_a <- get_diff_vals(apicalis_spatrast)
+vals_c <- get_diff_vals(conditor_spatrast)
 
-# ---- combine vertically, collect legend once, bottom-right ----
-combined_perf <- (p_apicalis / p_conditor) +
+lims_diff <- quantile(abs(c(vals_a, vals_c)), 0.98, na.rm = TRUE) |> as.numeric()
+lims_diff <- max(lims_diff, 0.1)
+
+make_centroid_diff_plot <- function(spatrast, species_label, lims_diff) {
+
+  # 1) Suitability-weighted centroids through time
+  centroids <- lapply(seq_len(nlyr(spatrast)), function(i) {
+    r      <- spatrast[[i]]
+    vals   <- terra::values(r)[, 1]
+    coords <- terra::crds(r, na.rm = FALSE)
+    valid  <- is.finite(vals) & vals > 0
+    if (!any(valid)) return(NULL)
+
+    w  <- vals[valid]
+    xy <- coords[valid, ]
+
+    data.frame(
+      time_bp   = terra::time(spatrast)[i],
+      longitude = weighted.mean(xy[, 1], w),
+      latitude  = weighted.mean(xy[, 2], w)
+    )
+  }) |> dplyr::bind_rows()
+
+  # 0 ka and 20 ka layers
+  r_times <- as.numeric(terra::time(spatrast))
+  idx_0   <- which.min(abs(r_times - 0))
+  idx_20  <- which.min(abs(r_times + 20000))
+
+  pt_0  <- centroids[which.min(abs(centroids$time_bp - 0)), , drop = FALSE]
+  pt_20 <- centroids[which.min(abs(centroids$time_bp + 20000)), , drop = FALSE]
+
+  # 2) Difference raster (0 ka − 20 ka)
+  r_diff <- spatrast[[idx_0]] - spatrast[[idx_20]]
+  names(r_diff) <- "diff"
+  r_diff <- terra::mask(r_diff, terra::vect(australia_outline))
+  df_diff <- as.data.frame(r_diff, xy = TRUE, na.rm = FALSE)
+
+  # IMPORTANT: use the shared limits
+  diff_fill_scale <- scale_fill_gradient2(
+    name     = "Change in suitability since 20 ka",
+    low      = "#ff7800",
+    mid      = "white",
+    high     = "#6112c2",
+    midpoint = 0,
+    limits   = c(-lims_diff, lims_diff),
+    na.value = "transparent",
+    guide    = guide_colorbar(
+      title.position = "top",
+      title.hjust    = 0,
+      barwidth       = unit(6, "cm"),
+      barheight      = unit(0.4, "cm"),
+      order          = 1
+    )
+  )
+
+  # 3) Dated middens (±500 yr)
+  m_sf <- middens_sf |> dplyr::mutate(time_bp = as.numeric(time_bp))
+  m_0  <- m_sf |> dplyr::filter(abs(time_bp - 0) <= 500) |> dplyr::mutate(when = "0 ka")
+  m_20 <- m_sf |> dplyr::filter(abs(time_bp + 20000) <= 500) |> dplyr::mutate(when = "20 ka")
+
+  m_plot <- dplyr::bind_rows(m_20, m_0) |>
+    dplyr::mutate(when = factor(when, levels = c("20 ka", "0 ka")))
+
+  coords <- sf::st_coordinates(m_plot)
+  m_plot_df <- m_plot |>
+    dplyr::mutate(longitude = coords[, 1], latitude = coords[, 2]) |>
+    sf::st_drop_geometry()
+
+  # 4) Plot
+  ggplot() +
+    geom_raster(data = df_diff, aes(x = x, y = y, fill = diff)) +
+    diff_fill_scale +
+    geom_sf(data = australia_outline, fill = NA, colour = "grey20", linewidth = 0.4) +
+    coord_sf(xlim = c(110, 155), ylim = c(-45, -10), expand = FALSE) +
+
+    geom_path(data = centroids, aes(longitude, latitude),
+              colour = "black", linewidth = 0.7, alpha = 0.85) +
+    geom_point(data = centroids, aes(longitude, latitude, colour = time_bp), size = 2) +
+    geom_point(data = pt_20, aes(longitude, latitude, shape = "20 ka centroid"),
+               size = 3, fill = "white", colour = "black", stroke = 0.6) +
+    geom_point(data = pt_0, aes(longitude, latitude, shape = "Present centroid"),
+               size = 3, fill = "yellow", colour = "black", stroke = 0.6) +
+
+    scale_color_viridis_c(
+      name = "Centroid Years BP",
+      option = "H",
+      limits = c(-40000, 0),
+      breaks = c(-40000, -30000, -20000, -10000, 0),
+      labels = c("40 ka", "30 ka", "20 ka", "10 ka", "0"),
+      guide = guide_colorbar(
+        title.position = "top",
+        title.hjust    = 0,
+        barwidth       = unit(6, "cm"),
+        barheight      = unit(0.4, "cm"),
+        order          = 2
+      )
+    ) +
+    scale_shape_manual(
+      name   = "Centroid positions",
+      values = c("20 ka centroid" = 24, "Present centroid" = 21),
+      guide  = guide_legend(
+        title.position = "top",
+        title.hjust    = 0,
+        order          = 3,
+        override.aes   = list(size = 3, fill = c("white", "yellow"), colour = "black")
+      )
+    ) +
+
+    ggnewscale::new_scale_fill() +
+    ggnewscale::new_scale_color() +
+    ggnewscale::new_scale("shape") +
+
+    geom_point(
+      data = m_plot_df,
+      aes(x = longitude, y = latitude, fill = when, shape = when),
+      colour = "black", size = 2.7, stroke = 0.4
+    ) +
+    scale_fill_manual(
+      values = c("20 ka" = "#E65100", "0 ka" = "#7C4DFF"),
+      guide  = "none"
+    ) +
+    scale_shape_manual(
+      name   = "Dated middens",
+      values = c("20 ka" = 24, "0 ka" = 21),
+      guide  = guide_legend(
+        title.position = "top",
+        title.hjust    = 0,
+        order          = 4,
+        override.aes   = list(size = 3, fill = c("#E65100", "#7C4DFF"), colour = "black")
+      )
+    ) +
+
+    labs(x = "Longitude", y = "Latitude") +
+    theme_map_clean +
+    theme(
+      legend.position = "bottom",
+      legend.box      = "vertical",
+      plot.title      = element_text(face = "italic", size = 13)
+    ) +
+    ggtitle(species_label)
+}
+
+# Build each species plot (same lims_diff passed to both)
+p_apicalis <- make_centroid_diff_plot(apicalis_spatrast, "Leporillus apicalis", lims_diff)
+p_conditor <- make_centroid_diff_plot(conditor_spatrast, "Leporillus conditor", lims_diff)
+
+combined_centroid_diff <- (p_apicalis / p_conditor) +
   patchwork::plot_layout(guides = "collect") &
-  ggplot2::theme(
-    legend.position = "bottom",
-    legend.justification = "right",
-    legend.background = ggplot2::element_rect(fill = "white", colour = NA),
-    legend.key = ggplot2::element_rect(fill = "white", colour = NA)
-  )
+  theme(legend.position = "bottom", legend.box = "vertical")
 
-
-# ---- save ----
-ggplot2::ggsave(
-  filename = file.path(combined_outdir, "combined_ensemble_performance.jpg"),
-  plot = combined_perf,
-  width = 8, height = 10, dpi = 300, bg = "white"
+ggsave(
+  filename = file.path(combined_outdir, "combined_range_shift_0_vs_20ka_with_middens.png"),
+  plot = combined_centroid_diff,
+  width = 7.5,
+  height = 13,
+  dpi = 300,
+  bg = "white"
 )
 
-combined_perf
-
-
-```
-
-#model performance2
-```{r}
-# ---- combined ensemble performance (apicalis + conditor), matched y by metric ----
-# Requires: apicalis_models, conditor_models already exist (from tune/workflowsets)
-# Saves to: combined_outdir
-
-# Paths (you already have this; keep if not defined earlier)
-combined_outdir <- "C:/github/SNR_SDM/Results/stratified environmental sampling/combined plots"
-dir.create(combined_outdir, showWarnings = FALSE, recursive = TRUE)
-
-# Labels + aesthetics (shared across species)
-workflow_labels <- c(
-  default_gam = "Generalised Additive Model",
-  default_gbm = "Boosted Tree",
-  default_glm = "Generalised Linear Model",
-  default_rf  = "Random Forest"
-)
-model_order <- c("Generalised Additive Model", "Boosted Tree", "Generalised Linear Model", "Random Forest")
-
-metric_labels <- c(boyce_cont = "Boyce Index", roc_auc = "AUC", tss_max = "TSS")
-
-color_map <- c(
-  "Generalised Additive Model" = "#FF61C3",
-  "Boosted Tree"               = "#00B140",
-  "Generalised Linear Model"   = "#00BFFF",
-  "Random Forest"              = "#BC43FF"
-)
-
-# ---- helper: extract fold-level metrics into a tidy table ----
-make_perf_data <- function(models_tbl, species_name) {
-  models_tbl |>
-    dplyr::mutate(metrics = purrr::map(result, collect_metrics, summarize = FALSE)) |>
-    dplyr::select(wflow_id, metrics) |>
-    tidyr::unnest(metrics) |>
-    dplyr::filter(.metric %in% names(metric_labels)) |>
-    dplyr::mutate(
-      species      = factor(species_name, levels = c("Leporillus apicalis", "Leporillus conditor")),
-      model        = factor(workflow_labels[wflow_id], levels = model_order),
-      metric_label = factor(metric_labels[.metric], levels = c("Boyce Index", "AUC", "TSS"))
-    )
-}
-
-perf_all <- dplyr::bind_rows(
-  make_perf_data(apicalis_models, "Leporillus apicalis"),
-  make_perf_data(conditor_models, "Leporillus conditor")
-)
-
-# ---- helper: y-limits per metric across BOTH species (adds small padding) ----
-ylims_for_metric <- function(df) {
-  range(df$.estimate, na.rm = TRUE)
-}
-
-
-# ---- helper: plot one metric column, with species stacked and shared y ----
-make_metric_plot <- function(metric_name) {
-
-  df_m  <- dplyr::filter(perf_all, metric_label == metric_name)
-  ylims <- ylims_for_metric(df_m)
-
-  # Force AUC axis limits (crops anything outside 0.8–1.0 visually)
-  if (metric_name == "AUC") {
-    ylims <- c(0.8, 1.0)
-  }
-
-  ggplot2::ggplot(df_m, ggplot2::aes(x = model, y = .estimate, fill = model)) +
-    ggplot2::geom_boxplot(width = 0.6, alpha = 0.9, outlier.shape = NA) +
-    ggplot2::geom_jitter(
-      ggplot2::aes(colour = model),
-      size = 1.3, width = 0.15, alpha = 0.4, stroke = 0.3, shape = 21
-    ) +
-    ggplot2::scale_fill_manual(values = color_map, name = "Model Type") +
-    ggplot2::scale_colour_manual(values = rep("black", length(model_order)), guide = "none") +
-    ggplot2::coord_cartesian(ylim = ylims) +
-    ggplot2::facet_grid(rows = ggplot2::vars(species)) +
-    ggplot2::labs(
-      title = metric_name,
-      x = NULL,
-      y = "Performance metric"
-    ) +
-    ggplot2::theme_minimal(base_size = 12) +
-    ggplot2::theme(
-      panel.background  = ggplot2::element_rect(fill = "#EEEEEE", colour = NA),
-      plot.background   = ggplot2::element_rect(fill = "white", colour = NA),
-      panel.grid.major  = ggplot2::element_line(colour = "white"),
-      panel.grid.minor  = ggplot2::element_blank(),
-      axis.text.x       = ggplot2::element_blank(),
-      axis.ticks.x      = ggplot2::element_blank(),
-
-      # species headings above each row
-      strip.placement   = "outside",
-      strip.text.y      = ggplot2::element_text(face = "italic", size = 13),
-      strip.background  = ggplot2::element_blank(),
-
-      plot.title        = ggplot2::element_text(face = "bold", size = 13),
-      legend.position   = "right"
-    )
-}
-
-
-# Build the three metric columns
-p_boyce <- make_metric_plot("Boyce Index")
-p_auc   <- make_metric_plot("AUC")
-p_tss   <- make_metric_plot("TSS")
-
-# Combine into a 2x3 layout with ONE legend
-combined_perf <- (p_boyce + p_auc + p_tss) +
-  patchwork::plot_layout(ncol = 3, guides = "collect") &
-  ggplot2::theme(
-    legend.position = "bottom",
-    legend.justification = "right"
-  )
-
-# Save + print
-ggplot2::ggsave(
-  filename = file.path(combined_outdir, "combined_ensemble_performance_matched_y.jpg"),
-  plot = combined_perf,
-  width = 8, height = 10, dpi = 300, bg = "white"
-)
-
-combined_perf
-
+combined_centroid_diff
 
 ```
