@@ -1,6 +1,6 @@
 ---
-title: "Apicalis cleaned"
-author: "Annie"
+title: "Apicalis"
+author: 
 date: "2025-10-30"
 output: html_document
 ---
@@ -68,7 +68,7 @@ suppressPackageStartupMessages({                                                
 # Project paths
 
 ```{r paths}
-here::i_am("Analyses/Krapp apicalis cleaned.Rmd")                               # declare project root via here()
+here::i_am("Analyses/Krapp apicalis.Rmd")                               # declare project root via here()
 
 results_dir   <- here("Results/stratified environmental sampling", "apicalis")     # figures/tables output
 processed_dir <- here("Data", "processed")                                         # cleaned input data

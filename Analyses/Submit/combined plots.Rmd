@@ -191,10 +191,10 @@ plot_zoomed_bio12 <- function() {
       colour = "Species"
     ) +
    scale_x_continuous(
-  breaks = seq(150, 400, by = 50),
-  minor_breaks = seq(150, 400, by = 25)
+  breaks = seq(125, 400, by = 50),
+  minor_breaks = seq(125, 400, by = 25)
 ) +
-coord_cartesian(xlim = c(150, 400)) +  # Zoom to 125–700 mm
+coord_cartesian(xlim = c(125, 400)) +  # Zoom to 125–700 mm
     theme_minimal(base_size = 12) +
     theme(
       plot.title = element_blank(),
@@ -770,8 +770,6 @@ ggsave(
 ```
 
 #Histogram
-
-
 ```{r histograms-1deg-two-species, message=FALSE, warning=FALSE}
 
 # ---- Preconditions ----
@@ -786,7 +784,6 @@ stopifnot(
 thr_a   <- if (exists("opt_threshold")) opt_threshold else 0.27
 dpi_out <- 300
 x_max   <- 0.9
-
 # ---- Histogram theme (ggplot-native, overrides defaults) ----
 theme_hist_clean <- theme_minimal(base_size = 11) +
   theme(
@@ -851,7 +848,7 @@ extract_mid_suitability <- function(m_sf, rast) {
   list(m_sf = m_sf_c, mid_suit = mid_suit)
 }
 
-make_coarse_hist <- function(rast, m_sf, thr_a, x_max, drop_x_axis = FALSE, legend_inside = FALSE, species_col = "#BC43FF") {
+make_coarse_hist <- function(rast, m_sf, thr_a, x_max, drop_x_axis = FALSE, legend_inside = FALSE) {
 
   ex <- extract_mid_suitability(m_sf, rast)
   m_sf_c   <- ex$m_sf
@@ -877,7 +874,7 @@ make_coarse_hist <- function(rast, m_sf, thr_a, x_max, drop_x_axis = FALSE, lege
     ) +
     geom_vline(xintercept = thr_a, linetype = "dashed", linewidth = 0.6) +
     scale_fill_manual(values = c(
-      "Middens" = species_col,
+      "Middens" = "#BC43FF",
       "Background (time-matched)" = "#9AA0A6"
     )) +
     scale_x_continuous(limits = c(0, x_max), breaks = seq(0, x_max, 0.1)) +
@@ -915,14 +912,17 @@ make_coarse_hist <- function(rast, m_sf, thr_a, x_max, drop_x_axis = FALSE, lege
 }
 
 # ---- Build the two correct coarse/1° panels ----
+
+p_ap <- p_ap + theme(aspect.ratio = 0.55)
+p_co <- p_co + theme(aspect.ratio = 0.55)
+
 p_ap <- make_coarse_hist(
   rast = apicalis_spatrast_coarse,
   m_sf = middens_sf,
   thr_a = thr_a,
   x_max = x_max,
   drop_x_axis = TRUE,
-  legend_inside = FALSE,
-  species_col = "#BC43FF"
+  legend_inside = FALSE
 ) +
   theme(legend.position = "none") +
   annotate("text", x = 0.02, y = Inf, label = "(a)",
@@ -935,8 +935,7 @@ p_co <- make_coarse_hist(
   thr_a = thr_a,
   x_max = x_max,
   drop_x_axis = FALSE,
-  legend_inside = TRUE,
-  species_col = "#00D19B"
+  legend_inside = TRUE
 ) +
   annotate("text", x = 0.02, y = Inf, label = "(b)",
            hjust = 0, vjust = 1.2, fontface = "bold", size = 4) +
@@ -964,8 +963,6 @@ ggsave(
 )
 
 ```
-
-
 #Centroid and diff map
 ```{r}
 suppressPackageStartupMessages({
