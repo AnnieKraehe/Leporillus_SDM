@@ -1,1 +1,0 @@
-This is made using the "conditor paleoview 2.rmd" code, which uses the the paleoview dataset and the code July wrote. 

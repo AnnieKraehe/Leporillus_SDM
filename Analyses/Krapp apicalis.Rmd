@@ -546,8 +546,8 @@ dated_middens <- read.csv(file.path(processed_dir, "Dated-Middens.csv"))        
 # Binnning for validation
 dated_middens_deaggregated <- dated_middens |>
   mutate(time_binned = plyr::round_any(time_bp, 1000),
-         lon_binned = plyr::round_any(longitude, 1),
-         lat_binned = plyr::round_any(latitude, 1)) |>
+         lon_binned = plyr::round_any(longitude, 0.5),
+         lat_binned = plyr::round_any(latitude, 0.5)) |>
 select(time_binned, lon_binned, lat_binned) |>
   distinct() |>
   rename(time_bp = time_binned,
@@ -1049,12 +1049,12 @@ b <- nrow(dplyr::filter(pres_abs_pred, class == "pseudoabs", pres_abs == 1))  # 
 c <- nrow(dplyr::filter(pres_abs_pred, class == "presence",  pres_abs == 0))  # FN
 d <- nrow(dplyr::filter(pres_abs_pred, class == "pseudoabs", pres_abs == 0))  # TN
 
-tpr <- a / (a + c)                                                            # sensitivity
-tnr <- d / (b + d)                                                            # specificity
-tss <- tpr + tnr - 1                                                          # TSS
-sorensen <- 2 * (a / (c + (2 * a) + d))                                       # Sørensen/Dice
-precision <- a / (a + b)                                                      # precision
-f2score <- 2 * ((precision * tpr) / (precision + tpr))                        # F2 (β=2)
+tpr      <- a / (a + c)
+tnr      <- d / (b + d)
+tss      <- tpr + tnr - 1
+sorensen <- 2 * a / (2 * a + b + c)
+precision <- a / (a + b)
+f2score   <- 5 * (precision * tpr) / (4 * precision + tpr)
 
 cat(sprintf("True Skill Statistic: %.3f\n", tss))
 cat(sprintf("Sorensen: %.3f\n", sorensen))
@@ -1127,7 +1127,7 @@ names(apicalis_rs_init) <- "pres_abs"
 
 # ---- Sample pseudo-absences with temporal & spatial rules ----
 pseudoabs_init <- sample_pseudoabs_time(
-  data            = dated_middens,                 # dated midden points
+  data            = dated_middens_deaggregated,                 # dated midden points
   raster          = apicalis_rs_init,              # binary model through time (1° here)
   n_per_presence  = 3,                             # 3 PAs per presence
   time_col        = "time_bp",                     # input time column (BP)
@@ -1141,7 +1141,7 @@ rt <- rt_bp                                        # model time grid (BP) for ne
 
 # Presence values (match each midden to nearest model time slice)
 presence_sf <- sf::st_as_sf(
-  dated_middens,
+  dated_middens_deaggregated,
   coords = c("longitude", "latitude"),
   crs    = 4326
 ) |>
@@ -1210,7 +1210,7 @@ names(apicalis_rs) <- "pres_abs"
 
 # ---- Resample pseudo-absences with final thresholded stack ----
 pseudoabs <- sample_pseudoabs_time(
-  data            = dated_middens,
+  data            = dated_middens_deaggregated,
   raster          = apicalis_rs,
   n_per_presence  = 3,
   time_col        = "time_bp",
@@ -1240,12 +1240,14 @@ b <- nrow(dplyr::filter(pres_abs_pred, class == "pseudoabs", pres_abs == 1))  # 
 c <- nrow(dplyr::filter(pres_abs_pred, class == "presence",  pres_abs == 0))  # FN
 d <- nrow(dplyr::filter(pres_abs_pred, class == "pseudoabs", pres_abs == 0))  # TN
 
+
 tpr      <- a / (a + c)
 tnr      <- d / (b + d)
 tss      <- tpr + tnr - 1
-sorensen <- 2 * (a / (c + (2 * a) + d))
+sorensen <- 2 * a / (2 * a + b + c)
 precision <- a / (a + b)
-f2score   <- 2 * ((precision * tpr) / (precision + tpr))
+f2score   <- 5 * (precision * tpr) / (4 * precision + tpr)
+
 
 cat(sprintf("True Skill Statistic (1°): %.3f\n", tss))
 cat(sprintf("Sorensen (1°): %.3f\n",        sorensen))

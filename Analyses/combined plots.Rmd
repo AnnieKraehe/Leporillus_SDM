@@ -388,7 +388,7 @@ ggsave(
 #Variable importance
 ```{r}
 # ---- Combined variable importance (apicalis + conditor) ----
-# Preconditions: apicalis_ensemble, conditor_ensemble exist
+# Preconditions: apicalis_ensemble, conditor_ensemble, combined_outdir exist
 # Outputs: one CSV + one plot in combined_outdir
 
 suppressPackageStartupMessages({
@@ -399,7 +399,8 @@ suppressPackageStartupMessages({
   library(tidyr)
 })
 
-
+# model_parts() permutes at random - seed so the published table is reproducible
+set.seed(42)
 
 # ---- Build explainers ----
 apicalis_explainer <- explain_tidysdm(apicalis_ensemble)
@@ -413,12 +414,10 @@ get_vip <- function(explainer, species_label) {
     dplyr::group_by(variable) |>
     dplyr::summarise(
       `Mean drop-out loss` = mean(dropout_loss, na.rm = TRUE),
-      `SD`                = sd(dropout_loss,   na.rm = TRUE),
+      `SD`                 = sd(dropout_loss,   na.rm = TRUE),
       .groups = "drop"
     ) |>
-    dplyr::mutate(
-      Species = species_label
-    ) |>
+    dplyr::mutate(Species = species_label) |>
     dplyr::rename(`Environmental variable` = variable)
 }
 
@@ -434,70 +433,42 @@ vip_wide <- vip_all |>
   ) |>
   dplyr::arrange(`Environmental variable`, Species) |>
   tidyr::pivot_wider(
-    names_from = Species,
+    names_from  = Species,
     values_from = c(`Mean drop-out loss`, SD)
-  )
-
-# Round only at the end (keeps numeric types during reshaping)
-vip_wide <- vip_wide |>
-  dplyr::mutate(
-    `Mean drop-out loss_Leporillus apicalis`  = round(`Mean drop-out loss_Leporillus apicalis`, 3),
-    `SD_Leporillus apicalis`                  = round(`SD_Leporillus apicalis`, 3),
-    `Mean drop-out loss_Leporillus conditor`  = round(`Mean drop-out loss_Leporillus conditor`, 3),
-    `SD_Leporillus conditor`                  = round(`SD_Leporillus conditor`, 3)
-  )
+  ) |>
+  # round at the end (keeps numeric types during reshaping)
+  dplyr::mutate(dplyr::across(where(is.numeric), \(x) round(x, 3)))
 
 print(vip_wide)
 
 write.csv(
   vip_wide,
-  file.path(vip_outdir, "combined_variable_importance_table.csv"),
+  file.path(combined_outdir, "combined_variable_importance_table.csv"),
   row.names = FALSE
 )
 
-# ---- Plot: mean drop-out loss by variable, two species (same y-axis) ----
+# ---- Plot: mean drop-out loss by variable, two species ----
 vip_plot_data <- vip_all |>
   dplyr::mutate(
     Species = factor(Species, levels = c("Leporillus apicalis", "Leporillus conditor")),
-    `Environmental variable` = factor(`Environmental variable`)
-  ) |>
-  dplyr::group_by(`Environmental variable`) |>
-  dplyr::mutate(
-    # order variables by average importance across species
-    avg_importance = mean(`Mean drop-out loss`, na.rm = TRUE)
-  ) |>
-  dplyr::ungroup() |>
-  dplyr::mutate(
-    `Environmental variable` = forcats::fct_reorder(`Environmental variable`, avg_importance, .desc = TRUE)
-  )
-
-# ---- One-panel combined variable importance (matched aesthetics) ----
-
-vip_plot_data <- vip_all |>
-  dplyr::mutate(
-    Species = factor(Species, levels = c("Leporillus apicalis", "Leporillus conditor")),
-    `Environmental variable` = factor(`Environmental variable`, levels = c("bio05", "bio06", "bio12"))
+    `Environmental variable` = factor(
+      `Environmental variable`,
+      levels = c("bio05", "bio06", "bio12")
+    )
   )
 
 vip_plot <- ggplot(
   vip_plot_data,
-  aes(
-    x = `Environmental variable`,
-    y = `Mean drop-out loss`,
-    fill = Species
-  )
+  aes(x = `Environmental variable`, y = `Mean drop-out loss`, fill = Species)
 ) +
-  geom_col(
-    position = position_dodge(width = 0.75),
-    width = 0.7
-  ) +
+  geom_col(position = position_dodge(width = 0.75), width = 0.7) +
   geom_errorbar(
     aes(
       ymin = `Mean drop-out loss` - SD,
       ymax = `Mean drop-out loss` + SD
     ),
-    position = position_dodge(width = 0.75),
-    width = 0.18,
+    position  = position_dodge(width = 0.75),
+    width     = 0.18,
     linewidth = 0.6
   ) +
   coord_flip() +
@@ -506,35 +477,34 @@ vip_plot <- ggplot(
       "Leporillus apicalis" = "#BC43FF",
       "Leporillus conditor" = "#00D19B"
     ),
+    labels = c(
+      expression(italic("Leporillus apicalis")),
+      expression(italic("Leporillus conditor"))
+    ),
     name = NULL
   ) +
-  labs(
-    x = "Environmental variable",
-    y = "Drop-out loss"
-  ) +
+  labs(x = "Environmental variable", y = "Drop-out loss") +
   theme_minimal(base_size = 12) +
   theme(
-    plot.background  = element_rect(fill = "white", colour = NA),
-    panel.background = element_rect(fill = "#F2F2F2", colour = NA),
-    panel.grid.major = element_line(colour = "#C4C4C4", linewidth = 0.3),
-    panel.grid.minor = element_blank(),
-    panel.border     = element_rect(colour = "#C4C4C4", fill = NA, linewidth = 0.3),
-
-    axis.text        = element_text(size = 11),
-    axis.title       = element_text(size = 12),
-
-    legend.position  = "right",
+    plot.background   = element_rect(fill = "white", colour = NA),
+    panel.background  = element_rect(fill = "#F2F2F2", colour = NA),
+    panel.grid.major  = element_line(colour = "#C4C4C4", linewidth = 0.3),
+    panel.grid.minor  = element_blank(),
+    panel.border      = element_rect(colour = "#C4C4C4", fill = NA, linewidth = 0.3),
+    axis.text         = element_text(size = 11),
+    axis.title        = element_text(size = 12),
+    legend.position   = "right",
     legend.background = element_blank(),
-    legend.key       = element_blank()
+    legend.key        = element_blank()
   )
 
 ggsave(
-  filename = file.path(vip_outdir, "combined_variable_importance_onepanel.png"),
-  plot = vip_plot,
-  width = 6,
-  height = 4.5,
-  dpi = 300,
-  bg = "white"
+  filename = file.path(combined_outdir, "combined_variable_importance_onepanel.png"),
+  plot     = vip_plot,
+  width    = 6,
+  height   = 4.5,
+  dpi      = 300,
+  bg       = "white"
 )
 
 vip_plot

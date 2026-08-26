@@ -1,25 +1,25 @@
-Site no.,Latitude,Longitude,Decimal lat,Decimal long,Region,Remarks,Species
-1,"-28 16' 50.135""","122 42' 23.51""",-28.280593,122.706531,GVD 1,,Leporillus apicalis
-21,"-29 05' 24.28""","124 36' 09.65""",-29.090078,124.602681,GVD 1,,Leporillus apicalis
-22,"-29 05' 16.256""","124 36' 09.043""",-29.087849,124.602512,GVD 1,,Leporillus apicalis
-23,"-29 05' 15.59""","124 37' 11.14""",-29.087664,124.619761,GVD 1,,Leporillus apicalis
-28b,"-29 07' 48.08""","124 38' 18.497""",-29.130023,124.638472,GVD 1,,Leporillus apicalis
-29b,"-29 07' 52.806""","124 38' 21.599""",-29.131335,124.639333,GVD 1,,Leporillus apicalis
-33,"-29 10' 40.876""","124 28' 53.065""",-29.178021,124.481407,GVD 2,,Leporillus apicalis
-35a,"-29 10' 36.32""","124 28' 44.78""",-29.176756,124.479105,GVD 2,,Leporillus apicalis
-36,"-29 13' 06.226""","124 31' 19.488""",-29.218396,124.52208,GVD 2,,Leporillus apicalis
-40,"-29 13' 32.394""","124 35' 32.237""",-29.555665,124.592288,GVD 2,,Leporillus apicalis
-41,"-29 19' 53.77""","124 34' 44.36""",-29.331603,124.578989,GVD 2,,Leporillus apicalis
-42,"-29 20' 00.51""","124 44' 25.74""",-29.333475,124.740483,GVD 2,,Leporillus apicalis
-44,"-26 45' 56.99""","124 21' 59.47""",-26.76583,124.36652,GVD 2,,Leporillus apicalis
-45,"-26 54' 16.17""","124 28' 06.35""",-26.904491,124.468431,GVD 2,,Leporillus apicalis
-50,"-26 50' 04.722""","125 39' 17.92""",-26.834645,125.654977,GID 1,Note Gibson Desert,Leporillus apicalis
-52,"-26° 35' 4-""","125° 51' 4-""",-26.595833,125.8625,GID 1,Note Gibson Desert,Leporillus apicalis
-53a,"-26 35' 54.074""","125 51' 21.54""",-26.598354,125.855984,GID 1,Note Gibson Desert,Leporillus apicalis
-54,"-26° 41' 4-""","126° 27' 0-""",-26.695833,126.451388,GID 1,Note Gibson Desert,Leporillus apicalis
-55,"-26° 41' 3-""","126° 27' 1-""",-26.693055,126.454166,GID 1,Note Gibson Desert,Leporillus apicalis
-58,"-27 03' 38.01""","126 22' 27.38""",-27.060558,126.374272,GVD 2,,Leporillus apicalis
-59,"-27 03' 36.54""","126 21' 43.99""",-27.06015,126.362217,GVD 2,,Leporillus apicalis
-61,"-27° 12' 5-""","126° 28' 0-""",-27.215277,126.468055,GVD 2,,Leporillus apicalis
-73,"-27 14' 06""","126 26' 34""",-27.235,126.44278,GVD 2,,Leporillus apicalis
-77,"-27 37' 18.91""","126 09' 18.84""",-27.621919,126.155233,GVD 2,,Leporillus apicalis
+Site no.,Decimal lat,Decimal long,Region,Remarks,Species
+1,-28.28,122.71,GVD 1,,Leporillus apicalis
+21,-29.09,124.6,GVD 1,,Leporillus apicalis
+22,-29.09,124.6,GVD 1,,Leporillus apicalis
+23,-29.09,124.62,GVD 1,,Leporillus apicalis
+28b,-29.13,124.64,GVD 1,,Leporillus apicalis
+29b,-29.13,124.64,GVD 1,,Leporillus apicalis
+33,-29.18,124.48,GVD 2,,Leporillus apicalis
+35a,-29.18,124.48,GVD 2,,Leporillus apicalis
+36,-29.22,124.52,GVD 2,,Leporillus apicalis
+40,-29.56,124.59,GVD 2,,Leporillus apicalis
+41,-29.33,124.58,GVD 2,,Leporillus apicalis
+42,-29.33,124.74,GVD 2,,Leporillus apicalis
+44,-26.77,124.37,GVD 2,,Leporillus apicalis
+45,-26.9,124.47,GVD 2,,Leporillus apicalis
+50,-26.83,125.65,GID 1,Note Gibson Desert,Leporillus apicalis
+52,-26.6,125.86,GID 1,Note Gibson Desert,Leporillus apicalis
+53a,-26.6,125.86,GID 1,Note Gibson Desert,Leporillus apicalis
+54,-26.7,126.45,GID 1,Note Gibson Desert,Leporillus apicalis
+55,-26.69,126.45,GID 1,Note Gibson Desert,Leporillus apicalis
+58,-27.06,126.37,GVD 2,,Leporillus apicalis
+59,-27.06,126.36,GVD 2,,Leporillus apicalis
+61,-27.22,126.47,GVD 2,,Leporillus apicalis
+73,-27.24,126.44,GVD 2,,Leporillus apicalis
+77,-27.62,126.16,GVD 2,,Leporillus apicalis
